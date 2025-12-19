@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <cstring>
 #include <iostream>
+#include <cstdio>
+#include <ctime>
 
 AudioEnginePlay::AudioEnginePlay()
 {
@@ -15,6 +17,8 @@ void AudioEnginePlay::addVoice(std::vector<float>&& buf, int sampleRate, int cha
     auto v = std::make_shared<Voice>();
     v->buf = std::make_shared<std::vector<float>>(std::move(buf));
     v->channels = channels;
+    v->sampleRate = sampleRate;
+    if (channels > 0 && v->buf) v->totalFrames = v->buf->size() / static_cast<size_t>(channels);
     v->pos.store(0);
     v->id = id;
     v->gain.store(gain);
@@ -26,6 +30,28 @@ void AudioEnginePlay::addVoice(std::vector<float>&& buf, int sampleRate, int cha
         auto snap = std::make_shared<std::vector<std::shared_ptr<Voice>>>(m_voices);
         std::atomic_store(&m_voiceSnapshot, snap);
     }
+}
+
+AudioEnginePlay::PlaybackInfo AudioEnginePlay::getPlaybackInfoById(const std::string& id) const
+{
+    PlaybackInfo out;
+    auto snap = std::atomic_load(&m_voiceSnapshot);
+    if (!snap) return out;
+    for (auto& v : *snap) {
+        if (!v) continue;
+        if (!id.empty() && v->id == id) {
+            size_t sampleIndex = v->pos.load();
+            int ch = v->channels > 0 ? v->channels : 1;
+            uint64_t frames = sampleIndex / static_cast<size_t>(ch);
+            out.found = true;
+            out.frames = frames;
+            out.sampleRate = v->sampleRate;
+            out.totalFrames = v->totalFrames;
+            // previously wrote debug info to /tmp; removed per request
+            return out;
+        }
+    }
+    return out;
 }
 
 bool AudioEnginePlay::restartVoicesById(const std::string& id)

@@ -33,6 +33,16 @@ public:
     // Stop voices matching id
     void stopVoicesById(const std::string& id);
 
+    struct PlaybackInfo {
+        bool found = false;
+        uint64_t frames = 0; // frames (not interleaved samples)
+        int sampleRate = 0;
+        uint64_t totalFrames = 0;
+    };
+
+    // Thread-safe query to obtain current playback frames/sampleRate for a voice id
+    PlaybackInfo getPlaybackInfoForId(const std::string& id) const;
+
     // Persist and restore JACK connections
     void saveConnections() const;
     void restoreConnections();

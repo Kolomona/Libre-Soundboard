@@ -11,14 +11,8 @@
 
 static void writeTabDebug(const QString& msg)
 {
-    QString path = QStringLiteral("/tmp/libresoundboard-debug.log");
-    QString line = QDateTime::currentDateTime().toString(Qt::ISODate) + " [" + QString::number(getpid()) + "] " + msg + "\n";
-    QFile f(path);
-    if (f.open(QIODevice::Append | QIODevice::Text)) {
-        f.write(line.toUtf8());
-        f.close();
-    }
-    qDebug().noquote() << line.trimmed();
+    // avoid writing to /tmp; use qDebug for visibility
+    qDebug().noquote() << msg;
 }
 #include <QPropertyAnimation>
 #include <QGraphicsOpacityEffect>

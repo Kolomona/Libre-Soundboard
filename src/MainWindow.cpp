@@ -32,6 +32,7 @@
 
 #include "SoundContainer.h"
 #include "AudioEngine.h"
+#include "PlayheadManager.h"
 #include "AudioFile.h"
 #include "CustomTabBar.h"
 #include "CustomTabWidget.h"
@@ -51,6 +52,9 @@ MainWindow::MainWindow(QWidget* parent)
     } else {
         statusBar()->showMessage(tr("Connected to JACK"), 2000);
     }
+
+    // Initialize centralized playhead manager with audio engine
+    PlayheadManager::instance()->init(&m_audioEngine);
 
     // Menu
     auto fileMenu = menuBar()->addMenu(tr("File"));
@@ -133,6 +137,8 @@ MainWindow::MainWindow(QWidget* parent)
                     Q_UNUSED(sc);
                     if (!path.isEmpty()) {
                         m_audioEngine.stopVoicesById(path.toStdString());
+                        // notify playhead manager that playback stopped (for simulated case)
+                        PlayheadManager::instance()->playbackStopped(path, sc);
                         statusBar()->showMessage(tr("Stopped: %1").arg(path), 1000);
                     }
                 });
@@ -357,15 +363,8 @@ void MainWindow::syncContainersWithUi()
 
 void MainWindow::writeDebugLog(const QString& msg)
 {
-    QString path = QString("/tmp/libresoundboard-debug.log");
-    QString line = QDateTime::currentDateTime().toString(Qt::ISODate) + " [" + QString::number(getpid()) + "] " + msg + "\n";
-    QFile f(path);
-    if (f.open(QIODevice::Append | QIODevice::Text)) {
-        f.write(line.toUtf8());
-        f.close();
-    }
-    // Always emit qDebug for visibility as well
-    qDebug().noquote() << line.trimmed();
+    // Do not write debug lines to disk; emit to qDebug only
+    qDebug().noquote() << msg;
 }
 
 MainWindow::~MainWindow()
@@ -393,6 +392,8 @@ void MainWindow::onPlayRequested(const QString& path, SoundContainer* src)
     // Use the file path as the voice id so repeated presses restart that sound
     float vol = 1.0f;
     if (src) vol = src->volume();
+    // notify playhead manager that playback started (simulated fallback)
+    PlayheadManager::instance()->playbackStarted(path, src);
     if (!m_audioEngine.playBuffer(samples, sr, ch, path.toStdString(), vol)) {
         statusBar()->showMessage(tr("Playback failed (JACK?)"), 3000);
     } else {

@@ -42,6 +42,10 @@ public:
     // Volume in range [0.0, 1.0]
     float volume() const;
 
+public slots:
+    // Called by PlayheadManager to update normalized playhead position in [0,1].
+    void setPlayheadPosition(float pos);
+
 protected:
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dropEvent(QDropEvent* event) override;
@@ -58,6 +62,7 @@ private slots:
 
 private:
     QPushButton* m_playBtn;
+    QLabel* m_filenameLabel;
     QLabel* m_waveform;
     QSlider* m_volume;
     QString m_filePath;

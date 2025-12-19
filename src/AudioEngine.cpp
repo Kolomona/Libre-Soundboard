@@ -219,3 +219,15 @@ void AudioEngine::stopVoicesById(const std::string& id)
     if (!m_priv) return;
     m_priv->player.stopVoicesById(id);
 }
+
+AudioEngine::PlaybackInfo AudioEngine::getPlaybackInfoForId(const std::string& id) const
+{
+    AudioEngine::PlaybackInfo out;
+    if (!m_priv) return out;
+    auto pinfo = m_priv->player.getPlaybackInfoById(id);
+    out.found = pinfo.found;
+    out.frames = pinfo.frames;
+    out.sampleRate = pinfo.sampleRate;
+    out.totalFrames = pinfo.totalFrames;
+    return out;
+}

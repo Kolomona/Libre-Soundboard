@@ -24,6 +24,7 @@
 #include <QResizeEvent>
 #include <QPaintEvent>
 #include "WaveformWorker.h"
+#include "PlayheadManager.h"
 
 namespace {
 static QPixmap makeDragCursorPixmap(const QString& text)
@@ -49,14 +50,8 @@ static QPixmap makeDragCursorPixmap(const QString& text)
 
 static void writeLocalDebug(const QString& msg)
 {
-    QString path = QStringLiteral("/tmp/libresoundboard-debug.log");
-    QString line = QDateTime::currentDateTime().toString(Qt::ISODate) + " [" + QString::number(getpid()) + "] " + msg + "\n";
-    QFile f(path);
-    if (f.open(QIODevice::Append | QIODevice::Text)) {
-        f.write(line.toUtf8());
-        f.close();
-    }
-    qDebug().noquote() << line.trimmed();
+    // do not write to disk; keep qDebug output only
+    qDebug().noquote() << msg;
 }
 }
 
@@ -64,10 +59,15 @@ SoundContainer::SoundContainer(QWidget* parent)
     : QFrame(parent)
 {
     auto layout = new QVBoxLayout(this);
-    m_waveform = new QLabel(tr("Drop audio file here"), this);
+    // filename label above the waveform (left-aligned)
+    m_filenameLabel = new QLabel(tr("Drop audio file here"), this);
+    m_filenameLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_filenameLabel->setIndent(6);
+    layout->addWidget(m_filenameLabel);
+
+    m_waveform = new QLabel(this);
     m_waveform->setMinimumSize(160, 80);
-    m_waveform->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    m_waveform->setIndent(6);
+    m_waveform->setAlignment(Qt::AlignCenter);
 
     m_playBtn = new QPushButton(tr("Play"), this);
     layout->addWidget(m_waveform);
@@ -177,6 +177,11 @@ void SoundContainer::onWaveformReady(const WaveformJob& job, const WaveformResul
     m_hasWavePixmap = true;
     m_waveform->setPixmap(m_wavePixmap.scaled(m_waveform->size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
     update();
+
+    // Register this container with the playhead manager so it can receive updates
+    if (!job.path.isEmpty()) {
+        PlayheadManager::instance()->registerContainer(job.path, this, result.duration, result.sampleRate);
+    }
 }
 
 void SoundContainer::onWaveformError(const WaveformJob& job, const QString& err)
@@ -186,7 +191,7 @@ void SoundContainer::onWaveformError(const WaveformJob& job, const QString& err)
     // For now, just keep placeholder text; ensure we don't mistakenly show previous pixmap
     m_hasWavePixmap = false;
     m_waveform->setPixmap(QPixmap());
-    m_waveform->setText(m_filePath.isEmpty() ? tr("Drop audio file here") : QFileInfo(m_filePath).fileName());
+    m_filenameLabel->setText(m_filePath.isEmpty() ? tr("Drop audio file here") : QFileInfo(m_filePath).fileName());
     update();
 }
 
@@ -350,6 +355,10 @@ void SoundContainer::setFile(const QString& path)
             m_waveWorker->cancelJob(m_pendingJobId);
             m_pendingJobId = QUuid();
         }
+        // unregister from playhead manager
+        if (!m_filePath.isEmpty()) {
+            PlayheadManager::instance()->unregisterContainer(m_filePath, this);
+        }
         m_filePath.clear();
         m_waveform->setPixmap(QPixmap());
         m_hasWavePixmap = false;
@@ -362,9 +371,9 @@ void SoundContainer::setFile(const QString& path)
 
     m_filePath = path;
     QFileInfo fi(path);
-    m_waveform->setText(fi.fileName());
+    m_filenameLabel->setText(fi.fileName());
     // show filename on hover (not the full path)
-    m_waveform->setToolTip(fi.fileName());
+    m_filenameLabel->setToolTip(fi.fileName());
     // Reset volume to default when a new file is assigned via drag-and-drop
     // (restoreLayout will call setVolume afterward if restoring saved state)
     setVolume(0.8f);
@@ -454,6 +463,43 @@ void SoundContainer::paintEvent(QPaintEvent* event)
     p.setPen(pen);
     p.drawLine(x, wfRect.top()+2, x, wfRect.bottom()-2);
 }
+
+void SoundContainer::setPlayheadPosition(float pos)
+{
+    // pos in [0,1], negative -> hidden/stopped
+    if (pos < 0.0f) {
+        m_playing = false;
+        m_playheadPos = -1.0f;
+        // restore original waveform pixmap when stopped
+        if (m_hasWavePixmap) {
+            m_waveform->setPixmap(m_wavePixmap.scaled(m_waveform->size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
+        }
+    } else {
+        m_playing = true;
+        m_playheadPos = pos;
+        // draw an overlay playhead into a copy of the waveform pixmap so it appears above the waveform
+        if (m_hasWavePixmap && !m_wavePixmap.isNull()) {
+            QSize labelSize = m_waveform->size();
+            if (labelSize.width() > 0 && labelSize.height() > 0) {
+                QPixmap scaled = m_wavePixmap.scaled(labelSize, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+                QPixmap over = scaled.copy();
+                QPainter p(&over);
+                p.setRenderHint(QPainter::Antialiasing);
+                int x = static_cast<int>(m_playheadPos * over.width());
+                QPen pen(QColor(255,200,60, 220));
+                pen.setWidth(2);
+                p.setPen(pen);
+                p.drawLine(x, 2, x, over.height() - 2);
+                p.end();
+                m_waveform->setPixmap(over);
+            }
+        }
+    }
+    // Log to debug file and update UI
+    writeLocalDebug(QString("setPlayheadPosition this=%1 pos=%2 playing=%3").arg(reinterpret_cast<uintptr_t>(this)).arg(pos).arg(m_playing));
+    update();
+}
+
 
 void SoundContainer::dropEvent(QDropEvent* event)
 {

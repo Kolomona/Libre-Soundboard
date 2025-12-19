@@ -33,6 +33,8 @@ private:
         std::shared_ptr<std::vector<float>> buf;
         std::atomic<size_t> pos{0};
         int channels = 0;
+        int sampleRate = 0;
+        size_t totalFrames = 0;
         std::string id;
         std::atomic<float> gain{1.0f};
     };
@@ -44,4 +46,15 @@ private:
     // `shared_ptr` and use `std::atomic_store`/`std::atomic_load` helpers for
     // thread-safe publication without making the shared_ptr itself atomic.
     std::shared_ptr<std::vector<std::shared_ptr<Voice>>> m_voiceSnapshot;
+
+public:
+    struct PlaybackInfo {
+        bool found = false;
+        uint64_t frames = 0; // frames (not interleaved samples)
+        int sampleRate = 0;
+        uint64_t totalFrames = 0; // total frames in the buffer, if known
+    };
+
+    // Thread-safe query (lock-free read of snapshot) to get playback info for a given id
+    PlaybackInfo getPlaybackInfoById(const std::string& id) const;
 };

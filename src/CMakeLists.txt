@@ -13,6 +13,8 @@ add_library(libresoundboard_core STATIC
     WaveformWidget.h
     WaveformWorker.cpp
     WaveformWorker.h
+    PlayheadManager.cpp
+    PlayheadManager.h
     WaveformPyramid.cpp
     WaveformPyramid.h
     WaveformRenderer.cpp

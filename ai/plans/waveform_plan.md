@@ -55,10 +55,10 @@ For human Testing:
 - Clearing slot removes thumbnail.
 
 ## Phase 5 — Playhead manager
-- [ ] Implement centralized playhead manager with one timer (30 Hz default) that queries `AudioEngine` for current frame/time.
-- [ ] Manager maps time -> pixel for each visible `SoundContainer` (use container duration/sample-count from `WaveformResult`).
-- [ ] Manager calls `update()` only on containers whose playhead position changed.
-- [ ] Expose a small thread-safe API in `AudioEngine` to read current frame/time (or post atomic updates from audio thread).
+ - [x] Implement centralized playhead manager with one timer (30 Hz default) that queries `AudioEngine` for current frame/time.
+ - [x] Manager maps time -> pixel for each visible `SoundContainer` (use container duration/sample-count from `WaveformResult`).
+ - [x] Manager calls `update()` only on containers whose playhead position changed.
+ - [x] Expose a small thread-safe API in `AudioEngine` to read current frame/time (or post atomic updates from audio thread).
 
 For human Testing:
 - Play audio in a slot. Expect a smoothly moving thin vertical line across the waveform thumbnail.
