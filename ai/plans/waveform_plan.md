@@ -19,6 +19,11 @@ For human Testing:
 - [ ] Produce multi-resolution levels (each level halves sample resolution by combining min/max pairs).
 - [ ] Unit tests: small synthetic buffers -> expected min/max outputs.
 - [ ] Expose API to request a specific pyramid level by desired pixel width.
+## Phase 2 — Pyramid generator
+- [x] Implement min/max bucket pyramid generator (configurable base bucket size, e.g., 256 samples).
+- [x] Produce multi-resolution levels (each level halves sample resolution by combining min/max pairs).
+- [x] Unit tests: small synthetic buffers -> expected min/max outputs.
+- [x] Expose API to request a specific pyramid level by desired pixel width.
 
 For human Testing:
 - Run unit tests for pyramid generator (ctest). Expect tests to pass.

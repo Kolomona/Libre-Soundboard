@@ -10,3 +10,9 @@ add_executable(tests_audiofile
 )
 target_link_libraries(tests_audiofile PRIVATE Catch2::Catch2 libresoundboard_core)
 add_test(NAME audiofile_tests COMMAND tests_audiofile)
+
+add_executable(tests_waveform_pyramid
+    ../tests/test_waveform_pyramid.cpp
+)
+target_link_libraries(tests_waveform_pyramid PRIVATE Catch2::Catch2 libresoundboard_core)
+add_test(NAME waveform_pyramid_tests COMMAND tests_waveform_pyramid)
