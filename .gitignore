@@ -1,0 +1,55 @@
+# Build artifacts
+/build/
+/bin/
+/lib/
+
+# CMake
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/Makefile
+
+# Compiled object files
+*.o
+*.obj
+
+# Libraries
+*.a
+*.so
+*.dll
+*.dylib
+
+# Qt/Autogen and moc
+/build/**/moc_*.cpp
+/build/**/qrc_*.cpp
+/build/**/ui_*.h
+
+# Qt Creator
+*.pro.user
+*.pro.user.*
+*.qmake.stash
+
+# Visual Studio Code
+.vscode/
+
+# JetBrains
+.idea/
+
+# macOS
+.DS_Store
+
+# Backup files
+*~
+*.swp
+*.swo
+
+# Test / coverage
+/coverage/
+lcov.info
+
+# Logs
+.log
+
+# Misc
+tags
+ctags
