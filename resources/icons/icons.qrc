@@ -1,0 +1,6 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource prefix="/icons">
+    <file>icon.png</file>
+    <file>icon-64.ico</file>
+</qresource>
+</RCC>

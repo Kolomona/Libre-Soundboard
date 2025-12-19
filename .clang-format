@@ -1,0 +1,6 @@
+// clang-format style configuration for LibreSoundboard
+BasedOnStyle: Google
+IndentWidth: 4
+ColumnLimit: 100
+AllowShortFunctionsOnASingleLine: Inline
+SortIncludes: true

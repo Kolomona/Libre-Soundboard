@@ -1,0 +1,42 @@
+#pragma once
+
+#include <vector>
+#include <string>
+
+/**
+ * AudioEngine: thin wrapper around JACK client for playback control.
+ * This is a stubbed implementation for initial development.
+ */
+struct AudioEnginePrivate;
+class AudioEngine
+{
+public:
+    AudioEngine();
+    ~AudioEngine();
+
+    bool init();
+    void shutdown();
+    /**
+     * Play interleaved float samples (any sample rate/channels). This will resample
+     * to the JACK sample rate and queue for playback. An optional `id` may be
+     * provided so subsequent play requests with the same id will restart that
+     * voice instead of adding a new concurrent voice.
+     */
+    bool playBuffer(const std::vector<float>& samples, int sampleRate, int channels, const std::string& id = std::string(), float gain = 1.0f);
+
+    // Stop all currently playing voices
+    void stopAll();
+
+    // Update gain for active voices matching id
+    void setVoiceGainById(const std::string& id, float gain);
+
+    // Stop voices matching id
+    void stopVoicesById(const std::string& id);
+
+    // Persist and restore JACK connections
+    void saveConnections() const;
+    void restoreConnections();
+
+private:
+    AudioEnginePrivate* m_priv = nullptr;
+};
