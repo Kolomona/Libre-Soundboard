@@ -6,6 +6,8 @@
 #include <QSharedPointer>
 #include <QAtomicInteger>
 #include <QUuid>
+#include <QMutex>
+#include <QHash>
 
 struct WaveformJob {
     QUuid id;
@@ -39,6 +41,13 @@ public:
     // Request cancellation of a job by id.
     void cancelJob(const QUuid& id);
 
+    // Synchronous decode helper for tests and callers that want immediate results.
+    // This reads the file (possibly using AudioFile) and fills WaveformResult
+    // with duration, sampleRate, channels, and simple min/max arrays sized
+    // approximately to pixelWidth * dpr. Cancellation token can be provided.
+    static WaveformResult decodeFile(const QString& path, int pixelWidth, qreal dpr = 1.0,
+                                     QSharedPointer<QAtomicInteger<int>> cancelToken = QSharedPointer<QAtomicInteger<int>>());
+
 signals:
     // Emitted on the main (GUI) thread when job completes successfully
     void waveformReady(const WaveformJob& job, const WaveformResult& result);
@@ -47,6 +56,10 @@ signals:
 
 private:
     Q_DISABLE_COPY(WaveformWorker)
+
+    // Map of active job tokens for cancellation support
+    QMutex m_tokenLock;
+    QHash<QUuid, QSharedPointer<QAtomicInteger<int>>> m_tokens;
 
     // Internal invokables called from worker threads via queued connection
     Q_INVOKABLE void notifyReady(const WaveformJob& job, const WaveformResult& result);

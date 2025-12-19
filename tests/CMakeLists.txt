@@ -22,3 +22,9 @@ add_executable(tests_waveform_renderer
 )
 target_link_libraries(tests_waveform_renderer PRIVATE Catch2::Catch2 libresoundboard_core)
 add_test(NAME waveform_renderer_tests COMMAND tests_waveform_renderer)
+
+add_executable(tests_waveform_worker
+    ../tests/test_waveform_worker.cpp
+)
+target_link_libraries(tests_waveform_worker PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Core)
+add_test(NAME waveform_worker_tests COMMAND tests_waveform_worker)

@@ -11,10 +11,10 @@ Guidelines for agents:
 Phases:
 
 ## Phase 1 — Decode stream & job infra
-- [ ] Add a streaming audio decoder task that yields PCM frames in chunks; support WAV/FLAC/MP3/OGG via libs (libsndfile/ffmpeg/mpg123) or platform decoders.
-- [ ] Define `WaveformJob { path, pixelWidth, dpr, requestId, cancelToken }` and `WaveformResult { levels: vector<Level>, duration, sampleRate, channels, totalSamples }`.
-- [ ] Implement worker enqueue/cancel/status API and a single-thread worker loop which emits completion/error signals to UI.
-- [ ] Unit test: synthetic PCM stream -> expected totalSamples/duration.
+- [x] Add a streaming audio decoder task that yields PCM frames in chunks; support WAV/FLAC/MP3/OGG via libs (libsndfile/ffmpeg/mpg123) or platform decoders.
+- [x] Define `WaveformJob { path, pixelWidth, dpr, requestId, cancelToken }` and `WaveformResult { levels: vector<Level>, duration, sampleRate, channels, totalSamples }`.
+- [x] Implement worker enqueue/cancel/status API and a single-thread worker loop which emits completion/error signals to UI.
+- [x] Unit test: synthetic PCM stream -> expected totalSamples/duration.
 
 For human Testing:
 - Build. Run unit tests that validate stream decoding and that cancellation returns quickly.
