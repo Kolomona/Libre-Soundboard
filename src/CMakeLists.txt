@@ -15,6 +15,10 @@ add_library(libresoundboard_core STATIC
     WaveformWorker.h
     WaveformPyramid.cpp
     WaveformPyramid.h
+    WaveformRenderer.cpp
+    WaveformRenderer.h
+    WaveformCache.cpp
+    WaveformCache.h
     AudioFile.cpp
     AudioFile.h
     SingleInstance.cpp

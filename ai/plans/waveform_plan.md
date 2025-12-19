@@ -30,10 +30,11 @@ For human Testing:
 - No UI required.
 
 ## Phase 3 — Bitmap renderer & cache interface
-- [ ] Implement renderer that converts a pyramid level to a DPR-aware QImage/bitmap at requested width.
-- [ ] Define cache key: hash(path + size + mtime + channels + samplerate + DPR + pixel-width).
-- [ ] Implement atomic cache write (temp file + rename) and metadata JSON alongside images.
-- [ ] On cache load: validate metadata; if invalid, delete and rebuild.
+- [x] Implement renderer that converts a pyramid level to a DPR-aware QImage/bitmap at requested width.
+- [x] Define cache key: hash(path + size + mtime + channels + samplerate + DPR + pixel-width).
+- [x] Implement atomic cache write (temp file + rename) and metadata JSON alongside images.
+- [x] On cache load: validate metadata; if invalid, delete and rebuild.
+- [x] Store cache in a persistent platform cache location (`QStandardPaths::CacheLocation`) under `libresoundboard/waveforms`; support `LIBRE_WAVEFORM_CACHE_DIR` env override for testing.
 
 For human Testing:
 - Load a sample audio file via the app; expect a cache file to appear in `QStandardPaths::CacheLocation` under `waveforms/`.
