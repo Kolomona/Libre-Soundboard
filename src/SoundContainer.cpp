@@ -21,6 +21,9 @@
 #include <QDateTime>
 #include <QFile>
 #include <unistd.h>
+#include <QResizeEvent>
+#include <QPaintEvent>
+#include "WaveformWorker.h"
 
 namespace {
 static QPixmap makeDragCursorPixmap(const QString& text)
@@ -91,6 +94,10 @@ SoundContainer::SoundContainer(QWidget* parent)
 
     connect(m_playBtn, &QPushButton::clicked, this, [this]() {
         if (!m_filePath.isEmpty()) {
+            // locally mark as playing (UI playhead overlay) and notify app
+            m_playing = true;
+            m_playheadPos = 0.0f;
+            update();
             emit playRequested(m_filePath, this);
         }
     });
@@ -120,6 +127,69 @@ SoundContainer::SoundContainer(QWidget* parent)
     // Note: contextMenuEvent is overridden below to prevent the menu
     // from appearing while a right-button drag/press is in progress.
 }
+
+// Worker signal handlers
+void SoundContainer::onWaveformReady(const WaveformJob& job, const WaveformResult& result)
+{
+    if (job.id != m_pendingJobId) return;
+    // build a simple pixmap preview (fallback renderer for phase 4)
+    QSize labelSize = m_waveform->size();
+    if (labelSize.width() <= 0 || labelSize.height() <= 0) return;
+    qreal dpr = job.dpr <= 0.0 ? 1.0 : job.dpr;
+    QImage img(labelSize.width() * dpr, labelSize.height() * dpr, QImage::Format_ARGB32_Premultiplied);
+    img.setDevicePixelRatio(dpr);
+    img.fill(Qt::transparent);
+    QPainter p(&img);
+    p.setRenderHint(QPainter::Antialiasing);
+    // background
+    p.fillRect(img.rect(), QColor(40, 40, 40));
+    // draw a naive representation: if we have min/max arrays, draw line strips
+    if (!result.min.isEmpty() && result.min.size() == result.max.size()) {
+        int n = result.min.size();
+        int w = img.width() / dpr;
+        int h = img.height() / dpr;
+        QPen pen(QColor(180, 180, 220));
+        pen.setWidthF(1.0);
+        p.setPen(pen);
+        for (int i = 0; i < n; ++i) {
+            float mn = result.min[i];
+            float mx = result.max[i];
+            int x = static_cast<int>((double)i / (double)n * w);
+            int y1 = static_cast<int>((0.5 - mn * 0.5) * h);
+            int y2 = static_cast<int>((0.5 - mx * 0.5) * h);
+            p.drawLine(x, y1, x, y2);
+        }
+    } else {
+        // no waveform data: draw a placeholder banded graphic to indicate rendering done
+        int w = img.width() / dpr;
+        int h = img.height() / dpr;
+        QPen pen(QColor(100, 160, 200));
+        pen.setWidthF(1.0);
+        p.setPen(pen);
+        for (int x = 0; x < w; x += 4) {
+            int hh = (x % 12 == 0) ? (h * 0.6) : (h * 0.3);
+            p.drawLine(x, (h - hh) / 2, x, (h + hh) / 2);
+        }
+    }
+    p.end();
+
+    m_wavePixmap = QPixmap::fromImage(img);
+    m_hasWavePixmap = true;
+    m_waveform->setPixmap(m_wavePixmap.scaled(m_waveform->size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
+    update();
+}
+
+void SoundContainer::onWaveformError(const WaveformJob& job, const QString& err)
+{
+    Q_UNUSED(job);
+    Q_UNUSED(err);
+    // For now, just keep placeholder text; ensure we don't mistakenly show previous pixmap
+    m_hasWavePixmap = false;
+    m_waveform->setPixmap(QPixmap());
+    m_waveform->setText(m_filePath.isEmpty() ? tr("Drop audio file here") : QFileInfo(m_filePath).fileName());
+    update();
+}
+
 
 void SoundContainer::mousePressEvent(QMouseEvent* event)
 {
@@ -275,7 +345,14 @@ void SoundContainer::setFile(const QString& path)
 
     if (path.isEmpty()) {
         // Clear to default state
+        // cancel outstanding job
+        if (m_waveWorker && !m_pendingJobId.isNull()) {
+            m_waveWorker->cancelJob(m_pendingJobId);
+            m_pendingJobId = QUuid();
+        }
         m_filePath.clear();
+        m_waveform->setPixmap(QPixmap());
+        m_hasWavePixmap = false;
         m_waveform->setText(tr("Drop audio file here"));
         m_waveform->setToolTip(QString());
         setVolume(0.8f);
@@ -292,6 +369,25 @@ void SoundContainer::setFile(const QString& path)
     // (restoreLayout will call setVolume afterward if restoring saved state)
     setVolume(0.8f);
     emit fileChanged(path);
+
+    // ensure we have a waveform worker
+    if (!m_waveWorker) {
+        m_waveWorker = new WaveformWorker(this);
+        connect(m_waveWorker, &WaveformWorker::waveformReady, this, &SoundContainer::onWaveformReady, Qt::QueuedConnection);
+        connect(m_waveWorker, &WaveformWorker::waveformError, this, &SoundContainer::onWaveformError, Qt::QueuedConnection);
+    }
+
+    // enqueue a render for current label width and DPR
+    int px = qMax(1, m_waveform->width());
+    qreal dpr = devicePixelRatioF();
+    // cancel previous job
+    if (!m_pendingJobId.isNull()) {
+        m_waveWorker->cancelJob(m_pendingJobId);
+        m_pendingJobId = QUuid();
+    }
+    m_hasWavePixmap = false;
+    m_waveform->setText(tr("Rendering..."));
+    m_pendingJobId = m_waveWorker->enqueueJob(m_filePath, px, dpr);
 }
 
 void SoundContainer::setVolume(float v)
@@ -321,6 +417,42 @@ void SoundContainer::dragEnterEvent(QDragEnterEvent* event)
         return;
     }
     event->ignore();
+}
+
+void SoundContainer::resizeEvent(QResizeEvent* event)
+{
+    QFrame::resizeEvent(event);
+    // when resized, request a new waveform render if we have a file
+    if (!m_filePath.isEmpty()) {
+        if (!m_waveWorker) return;
+        int px = qMax(1, m_waveform->width());
+        qreal dpr = devicePixelRatioF();
+        if (!m_pendingJobId.isNull()) {
+            m_waveWorker->cancelJob(m_pendingJobId);
+            m_pendingJobId = QUuid();
+        }
+        m_hasWavePixmap = false;
+        m_waveform->setText(tr("Rendering..."));
+        m_pendingJobId = m_waveWorker->enqueueJob(m_filePath, px, dpr);
+    }
+}
+
+void SoundContainer::paintEvent(QPaintEvent* event)
+{
+    QFrame::paintEvent(event);
+    if (!m_hasWavePixmap) return;
+    if (!m_playing) return;
+
+    QPainter p(this);
+    QRect wfRect = m_waveform->geometry();
+    p.setRenderHint(QPainter::Antialiasing);
+    // compute playhead x
+    if (m_playheadPos < 0.0f) return;
+    int x = wfRect.left() + static_cast<int>(m_playheadPos * wfRect.width());
+    QPen pen(QColor(255,200,60, 220));
+    pen.setWidth(2);
+    p.setPen(pen);
+    p.drawLine(x, wfRect.top()+2, x, wfRect.bottom()-2);
 }
 
 void SoundContainer::dropEvent(QDropEvent* event)

@@ -3,9 +3,16 @@
 #include <QFrame>
 #include <QString>
 
+#include <QUuid>
 class QPushButton;
 class QLabel;
 class QSlider;
+class QResizeEvent;
+class QPaintEvent;
+
+// forward declare worker structs
+struct WaveformJob;
+struct WaveformResult;
 
 /**
  * A single sound container shown in the grid. Displays a waveform, play button and volume knob.
@@ -42,6 +49,12 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
+
+private slots:
+    void onWaveformReady(const WaveformJob& job, const WaveformResult& result);
+    void onWaveformError(const WaveformJob& job, const QString& err);
 
 private:
     QPushButton* m_playBtn;
@@ -53,4 +66,12 @@ private:
     Qt::MouseButton m_dragButton = Qt::NoButton;
     // Set when this container received a drop so a following release won't show the menu
     bool m_justDropped = false;
+    // Waveform integration (phase 4)
+    class WaveformWorker* m_waveWorker = nullptr;
+    QUuid m_pendingJobId;
+    QPixmap m_wavePixmap;
+    bool m_hasWavePixmap = false;
+    bool m_playing = false;
+    // Normalized [0,1] playhead position; negative means hidden
+    float m_playheadPos = -1.0f;
 };

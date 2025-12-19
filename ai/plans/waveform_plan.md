@@ -45,6 +45,10 @@ For human Testing:
 - [ ] On `resizeEvent` or DPR change, enqueue a new render (cancel outstanding if needed).
 - [ ] `paintEvent`: blit cached bitmap (if available); draw thin playhead overlay as a separate primitive. Do not re-render bitmap per frame.
 - [ ] On `clearRequested` or slot replace: cancel job, clear cached display and update UI.
+ - [x] On `setFile()` enqueue a waveform job for current container width and DPR; return placeholder immediately.
+ - [x] On `resizeEvent` or DPR change, enqueue a new render (cancel outstanding if needed).
+ - [x] `paintEvent`: blit cached bitmap (if available); draw thin playhead overlay as a separate primitive. Do not re-render bitmap per frame.
+ - [x] On `clearRequested` or slot replace: cancel job, clear cached display and update UI.
 
 For human Testing:
 - Drag an audio file into a slot. Expect placeholder then thumbnail appears within a few 100ms (depends on file length).
