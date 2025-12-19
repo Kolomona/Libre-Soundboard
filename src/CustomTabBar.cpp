@@ -5,6 +5,21 @@
 #include <QPainter>
 #include <QApplication>
 #include <QLabel>
+#include <QDateTime>
+#include <QFile>
+#include <unistd.h>
+
+static void writeTabDebug(const QString& msg)
+{
+    QString path = QStringLiteral("/tmp/libresoundboard-debug.log");
+    QString line = QDateTime::currentDateTime().toString(Qt::ISODate) + " [" + QString::number(getpid()) + "] " + msg + "\n";
+    QFile f(path);
+    if (f.open(QIODevice::Append | QIODevice::Text)) {
+        f.write(line.toUtf8());
+        f.close();
+    }
+    qDebug().noquote() << line.trimmed();
+}
 #include <QPropertyAnimation>
 #include <QGraphicsOpacityEffect>
 #include <QStyleOptionTab>
@@ -214,7 +229,10 @@ void CustomTabBar::dropEvent(QDropEvent* event)
                 int newIndex = -1;
                 for (int idx = 0; idx < (int)order.size(); ++idx) if (order[idx] == from) { newIndex = idx; break; }
                 if (newIndex >= 0) {
+                    writeTabDebug(QString("CustomTabBar: reordered from=%1 to=%2").arg(from).arg(newIndex));
                     onTabMoved(from, newIndex);
+                    // notify MainWindow (or other listeners) that a full reorder happened
+                    emit tabOrderChanged();
                     // Make the moved tab the active tab after the reinsertions
                     // complete. Use a queued singleShot to avoid other internal
                     // QTabWidget updates clobbering our selection.
@@ -236,6 +254,8 @@ void CustomTabBar::dropEvent(QDropEvent* event)
         int fallbackTo = to;
         if (fallbackTo >= count()) fallbackTo = count()-1;
         moveTab(from, fallbackTo);
+        writeTabDebug(QString("CustomTabBar: fallback moveTab from=%1 to=%2").arg(from).arg(fallbackTo));
+        emit tabOrderChanged();
         // if we have a QTabWidget parent, make the moved tab active after
         // the move completes (queued) so internal updates don't override it.
         QTabWidget* parentTabWidget = qobject_cast<QTabWidget*>(parentWidget());

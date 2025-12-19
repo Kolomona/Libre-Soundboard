@@ -24,12 +24,22 @@
 #include <QJsonObject>
 #include <QShortcut>
 #include <QApplication>
+#include <QDateTime>
+#include <QFile>
+#include <QCoreApplication>
+#include <unistd.h>
+#include <QTimer>
 
 #include "SoundContainer.h"
 #include "AudioEngine.h"
 #include "AudioFile.h"
 #include "CustomTabBar.h"
 #include "CustomTabWidget.h"
+
+#include <QDateTime>
+#include <QFile>
+#include <QCoreApplication>
+#include <unistd.h>
 
 
 MainWindow::MainWindow(QWidget* parent)
@@ -71,8 +81,8 @@ MainWindow::MainWindow(QWidget* parent)
     });
 
     auto editMenu = menuBar()->addMenu(tr("Edit"));
-    m_undoAction = editMenu->addAction(tr("Undo"), this, &MainWindow::undoRename);
-    m_redoAction = editMenu->addAction(tr("Redo"), this, &MainWindow::redoRename);
+    m_undoAction = editMenu->addAction(tr("Undo"), this, &MainWindow::performUndo);
+    m_redoAction = editMenu->addAction(tr("Redo"), this, &MainWindow::performRedo);
     // Set shortcuts: Ctrl+Z for Undo, Shift+Ctrl+Z for Redo
     if (m_undoAction) m_undoAction->setShortcut(QKeySequence("Ctrl+Z"));
     if (m_redoAction) m_redoAction->setShortcut(QKeySequence("Shift+Ctrl+Z"));
@@ -110,6 +120,7 @@ MainWindow::MainWindow(QWidget* parent)
                 connect(sc, &SoundContainer::swapRequested, this, &MainWindow::onSwapRequested);
                 connect(sc, &SoundContainer::copyRequested, this, &MainWindow::onCopyRequested);
                 connect(sc, &SoundContainer::fileChanged, this, [this](const QString& p){ statusBar()->showMessage(p, 2000); });
+                connect(sc, &SoundContainer::clearRequested, this, &MainWindow::onClearRequested);
                 // Update active voice gain when the slider changes
                 connect(sc, &SoundContainer::volumeChanged, this, [this, sc](float v){
                     if (sc && !sc->file().isEmpty()) {
@@ -172,17 +183,189 @@ MainWindow::MainWindow(QWidget* parent)
                 });
             }
             // Always offer Undo/Redo in the tab context menu
-            if (m_undoAction) menu.addAction(m_undoAction->text(), this, &MainWindow::undoRename)->setEnabled(!m_undoStack.empty());
-            if (m_redoAction) menu.addAction(m_redoAction->text(), this, &MainWindow::redoRename)->setEnabled(!m_redoStack.empty());
+            if (m_undoAction) menu.addAction(m_undoAction->text(), this, &MainWindow::performUndo)->setEnabled(!m_undoStack.empty());
+            if (m_redoAction) menu.addAction(m_redoAction->text(), this, &MainWindow::performRedo)->setEnabled(!m_redoStack.empty());
             menu.exec(bar->mapToGlobal(pt));
         });
+        // Keep internal container mapping in-sync when tabs are reordered
+        connect(m_tabs->tabBar(), &QTabBar::tabMoved, this, &MainWindow::onTabMoved);
+        // Also watch for explicit tab-order changes emitted by CustomTabBar
+        CustomTabBar* cbar = qobject_cast<CustomTabBar*>(m_tabs->tabBar());
+        if (cbar) connect(cbar, &CustomTabBar::tabOrderChanged, this, &MainWindow::onTabOrderChanged);
     }
 
     setCentralWidget(m_tabs);
     // After UI is constructed, restore previous layout if any
     restoreLayout();
+    // Emit a startup debug line so we can confirm the debug logger is being invoked
+    writeDebugLog(QString("MainWindow constructed pid=%1").arg(getpid()));
     setWindowTitle(tr("LibreSoundboard"));
     resize(900, 600);
+}
+
+void MainWindow::onTabMoved(int from, int to)
+{
+    if (from == to) return;
+    writeDebugLog(QString("onTabMoved called from=%1 to=%2 pageFrom=%3 pageTo=%4")
+                  .arg(from).arg(to)
+                  .arg(reinterpret_cast<uintptr_t>(m_tabs->widget(from)))
+                  .arg(reinterpret_cast<uintptr_t>(m_tabs->widget(to))));
+    // record operation for undo/redo: user moved tab from->to
+    Operation op;
+    op.type = Operation::TabMove;
+    op.moveFrom = from;
+    op.moveTo = to;
+    // record the widget pointer for the moved page from the original source index
+    op.movePage = m_tabs->widget(from);
+    // avoid duplicate consecutive TabMove entries for the same page/move
+    if (m_undoStack.empty() || !(m_undoStack.back().type == Operation::TabMove && m_undoStack.back().movePage == op.movePage && m_undoStack.back().moveTo == op.moveTo)) {
+        m_undoStack.push_back(op);
+        writeDebugLog(QString("pushed TabMove op movePage=%1 from=%2 to=%3 stackSize=%4")
+                      .arg(reinterpret_cast<uintptr_t>(op.movePage)).arg(op.moveFrom).arg(op.moveTo).arg(m_undoStack.size()));
+    } else {
+        writeDebugLog(QString("skipped duplicate TabMove for movePage=%1 to=%2")
+                      .arg(reinterpret_cast<uintptr_t>(op.movePage)).arg(op.moveTo));
+    }
+    m_redoStack.clear();
+    if (m_undoAction) m_undoAction->setEnabled(true);
+    if (m_redoAction) m_redoAction->setEnabled(false);
+    if (from < 0 || from >= (int)m_containers.size()) return;
+    if (to < 0) to = 0;
+    if (to >= (int)m_containers.size()) to = static_cast<int>(m_containers.size()) - 1;
+
+    // Move the vector element at 'from' to position 'to'
+    auto moving = std::move(m_containers[from]);
+    if (from < to) {
+        // shift left the range (from+1 .. to) down by one
+        for (int i = from; i < to; ++i) m_containers[i] = std::move(m_containers[i + 1]);
+        m_containers[to] = std::move(moving);
+    } else {
+        // from > to: shift right the range (to .. from-1) up by one
+        for (int i = from; i > to; --i) m_containers[i] = std::move(m_containers[i - 1]);
+        m_containers[to] = std::move(moving);
+    }
+    // ensure internal mapping matches UI after a tab move
+    QTimer::singleShot(0, this, [this]() { syncContainersWithUi(); });
+}
+
+void MainWindow::onTabOrderChanged()
+{
+    // Compare previous page order to new one to detect which tab moved.
+    // Capture previous page pointers
+    QVector<QWidget*> prevPages;
+    for (int i = 0; i < m_tabs->count(); ++i) prevPages.append(m_tabs->widget(i));
+
+    // sync will rebuild m_containers based on current UI; but we need the UI order after the change.
+    // Because CustomTabBar already modified the tab widget order, the widgets in m_tabs reflect new order now.
+    // Find differences between prevPages (which actually reflect the previous ordering only if called before reorder)
+    // To be robust, instead compute page pointers before calling syncContainersWithUi by inspecting stored m_containers mapping.
+    QVector<QWidget*> oldOrder;
+    for (size_t t = 0; t < m_containers.size(); ++t) {
+        QWidget* w = m_tabs->widget(static_cast<int>(t));
+        Q_UNUSED(w);
+    }
+
+    // Instead, build a vector of page widgets from the previous m_containers state by using index mapping.
+    QVector<QWidget*> beforePages;
+    for (int i = 0; i < m_tabs->count(); ++i) {
+        // attempt to get the page widget pointer that was at index i before sync by using m_tabs->widget(i)
+        // Note: CustomTabBar has already changed widget order; to detect movement we compare previous m_containers indices
+        // with current m_tabs order: find a page in m_tabs whose contained first slot widget matches m_containers[i][0]
+        QWidget* matched = nullptr;
+        if (i < (int)m_containers.size() && !m_containers[i].empty()) {
+            SoundContainer* firstSc = m_containers[i][0];
+            if (firstSc) matched = firstSc->parentWidget();
+        }
+        beforePages.append(matched);
+    }
+
+    // Now compute new order: current m_tabs widgets
+    QVector<QWidget*> afterPages;
+    for (int i = 0; i < m_tabs->count(); ++i) afterPages.append(m_tabs->widget(i));
+
+    // Find which page moved: look for a page pointer that shifted index
+    int movedFrom = -1, movedTo = -1;
+    QWidget* movedPage = nullptr;
+    for (int oldIdx = 0; oldIdx < beforePages.size(); ++oldIdx) {
+        QWidget* p = beforePages[oldIdx];
+        if (!p) continue;
+        int newIdx = afterPages.indexOf(p);
+        if (newIdx >= 0 && newIdx != oldIdx) {
+            movedFrom = oldIdx;
+            movedTo = newIdx;
+            movedPage = p;
+            break;
+        }
+    }
+
+    // Record operation if we detected a move
+    if (movedPage) {
+        Operation op;
+        op.type = Operation::TabMove;
+        op.moveFrom = movedFrom;
+        op.moveTo = movedTo;
+        op.movePage = movedPage;
+        if (m_undoStack.empty() || !(m_undoStack.back().type == Operation::TabMove && m_undoStack.back().movePage == op.movePage && m_undoStack.back().moveTo == op.moveTo)) {
+            m_undoStack.push_back(op);
+            writeDebugLog(QString("onTabOrderChanged: detected move page=%1 from=%2 to=%3 stackSize=%4")
+                          .arg(reinterpret_cast<uintptr_t>(movedPage)).arg(movedFrom).arg(movedTo).arg(m_undoStack.size()));
+            // Maintain undo/redo action state consistently (same as onTabMoved)
+            m_redoStack.clear();
+            if (m_undoAction) m_undoAction->setEnabled(true);
+            if (m_redoAction) m_redoAction->setEnabled(false);
+        } else {
+            writeDebugLog(QString("onTabOrderChanged: duplicate move skipped page=%1 to=%2").arg(reinterpret_cast<uintptr_t>(movedPage)).arg(movedTo));
+        }
+    } else {
+        writeDebugLog(QString("onTabOrderChanged: no move detected"));
+    }
+
+    // Rebuild internal mapping
+    syncContainersWithUi();
+}
+
+void MainWindow::syncContainersWithUi()
+{
+    Q_UNUSED(m_tabs);
+    int tabCount = m_tabs->count();
+    m_containers.clear();
+    m_containers.resize(tabCount);
+    for (int t = 0; t < tabCount; ++t) {
+        QWidget* tabWidget = m_tabs->widget(t);
+        if (!tabWidget) continue;
+        QGridLayout* layout = qobject_cast<QGridLayout*>(tabWidget->layout());
+        if (!layout) continue;
+        // Collect widgets by row/col order. Assume same rows/cols used when building.
+        int rows = 4, cols = 8; // keep in sync with creation
+        m_containers[t].reserve(rows * cols);
+        for (int r = 0; r < rows; ++r) {
+            for (int c = 0; c < cols; ++c) {
+                QLayoutItem* it = layout->itemAtPosition(r, c);
+                if (it && it->widget()) m_containers[t].push_back(qobject_cast<SoundContainer*>(it->widget()));
+                else m_containers[t].push_back(nullptr);
+            }
+        }
+        // log the pointers for the tab
+        QStringList ptrs;
+        for (size_t i = 0; i < m_containers[t].size(); ++i) {
+            auto sc = m_containers[t][i];
+            ptrs << QString::number(reinterpret_cast<uintptr_t>(sc));
+        }
+        Q_UNUSED(ptrs);
+    }
+}
+
+void MainWindow::writeDebugLog(const QString& msg)
+{
+    QString path = QString("/tmp/libresoundboard-debug.log");
+    QString line = QDateTime::currentDateTime().toString(Qt::ISODate) + " [" + QString::number(getpid()) + "] " + msg + "\n";
+    QFile f(path);
+    if (f.open(QIODevice::Append | QIODevice::Text)) {
+        f.write(line.toUtf8());
+        f.close();
+    }
+    // Always emit qDebug for visibility as well
+    qDebug().noquote() << line.trimmed();
 }
 
 MainWindow::~MainWindow()
@@ -220,30 +403,60 @@ void MainWindow::onPlayRequested(const QString& path, SoundContainer* src)
 void MainWindow::onSwapRequested(SoundContainer* src, SoundContainer* dst)
 {
     if (!src || !dst) return;
-    int srcTab = -1, srcIdx = -1, dstTab = -1, dstIdx = -1;
-    for (int t = 0; t < (int)m_containers.size(); ++t) {
-        for (int i = 0; i < (int)m_containers[t].size(); ++i) {
-            if (m_containers[t][i] == src) { srcTab = t; srcIdx = i; }
-            if (m_containers[t][i] == dst) { dstTab = t; dstIdx = i; }
+    writeDebugLog(QString("onSwapRequested: src=%1 dst=%2").arg(reinterpret_cast<uintptr_t>(src)).arg(reinterpret_cast<uintptr_t>(dst)));
+    // Determine the tab/page and slot index by querying the widget parent/layout
+    auto findPos = [this](SoundContainer* sc) -> std::pair<int,int> {
+        if (!sc) return {-1,-1};
+        QWidget* page = sc->parentWidget();
+        if (!page) { return {-1,-1}; }
+        int tabIndex = m_tabs->indexOf(page);
+        if (tabIndex < 0) return {-1,-1};
+        QGridLayout* layout = qobject_cast<QGridLayout*>(page->layout());
+        if (!layout) { return {tabIndex, -1}; }
+        // find item's position
+        int rows = 4, cols = 8;
+        for (int r = 0; r < rows; ++r) {
+            for (int c = 0; c < cols; ++c) {
+                QLayoutItem* it = layout->itemAtPosition(r, c);
+                if (it && it->widget() == sc) {
+                    Q_UNUSED(sc); Q_UNUSED(page); Q_UNUSED(r); Q_UNUSED(c); Q_UNUSED(tabIndex); Q_UNUSED(layout);
+                    return {tabIndex, r * cols + c};
+                }
+            }
         }
-    }
-    if (srcTab == -1 || dstTab == -1) return;
-
-    // swap in data structure
-    std::swap(m_containers[srcTab][srcIdx], m_containers[dstTab][dstIdx]);
-
-    // update layouts for both tabs
-    auto updateWidgetPos = [this](int tab, int idx){
-        QWidget* tabWidget = m_tabs->widget(tab);
-        if (!tabWidget) return;
-        QGridLayout* layout = qobject_cast<QGridLayout*>(tabWidget->layout());
-        if (!layout) return;
-        const int cols = 8;
-        int r = idx / cols; int c = idx % cols;
-        layout->addWidget(m_containers[tab][idx], r, c);
+        Q_UNUSED(sc); Q_UNUSED(page); Q_UNUSED(tabIndex);
+        return {tabIndex, -1};
     };
-    updateWidgetPos(srcTab, srcIdx);
-    updateWidgetPos(dstTab, dstIdx);
+
+    auto sPos = findPos(src);
+    auto dPos = findPos(dst);
+    int srcTab = sPos.first, srcIdx = sPos.second;
+    int dstTab = dPos.first, dstIdx = dPos.second;
+    Q_UNUSED(src); Q_UNUSED(dst); Q_UNUSED(srcTab); Q_UNUSED(srcIdx); Q_UNUSED(dstTab); Q_UNUSED(dstIdx);
+    if (srcTab == -1 || dstTab == -1 || srcIdx == -1 || dstIdx == -1) return;
+
+    // swap in data structure: perform direct reparenting of the widgets
+    QWidget* sPage = src->parentWidget();
+    QWidget* dPage = dst->parentWidget();
+    QGridLayout* sLayout = sPage ? qobject_cast<QGridLayout*>(sPage->layout()) : nullptr;
+    QGridLayout* dLayout = dPage ? qobject_cast<QGridLayout*>(dPage->layout()) : nullptr;
+
+    const int cols = 8;
+    int sR = srcIdx / cols, sC = srcIdx % cols;
+    int dR = dstIdx / cols, dC = dstIdx % cols;
+
+    Q_UNUSED(sPage); Q_UNUSED(dPage); Q_UNUSED(sLayout); Q_UNUSED(dLayout); Q_UNUSED(sR); Q_UNUSED(sC); Q_UNUSED(dR); Q_UNUSED(dC);
+
+    if (dLayout && src) {
+        dLayout->addWidget(src, dR, dC);
+    }
+    if (sLayout && dst) {
+        sLayout->addWidget(dst, sR, sC);
+    }
+    Q_UNUSED(srcTab); Q_UNUSED(srcIdx); Q_UNUSED(dstTab); Q_UNUSED(dstIdx);
+    // Rebuild internal mapping from the UI to avoid stale index issues
+    syncContainersWithUi();
+    Q_UNUSED(src); Q_UNUSED(dst);
 
     // record operation for undo/redo
     Operation op;
@@ -253,6 +466,7 @@ void MainWindow::onSwapRequested(SoundContainer* src, SoundContainer* dst)
     op.srcIdx = srcIdx;
     op.dstIdx = dstIdx;
     m_undoStack.push_back(op);
+    writeDebugLog(QString("pushed Swap op tab=%1 s=%2 d=%3 stackSize=%4").arg(op.tab).arg(op.srcIdx).arg(op.dstIdx).arg(m_undoStack.size()));
     m_redoStack.clear();
     if (m_undoAction) m_undoAction->setEnabled(true);
     if (m_redoAction) m_redoAction->setEnabled(false);
@@ -261,13 +475,28 @@ void MainWindow::onSwapRequested(SoundContainer* src, SoundContainer* dst)
 void MainWindow::onCopyRequested(SoundContainer* src, SoundContainer* dst)
 {
     if (!src || !dst) return;
-    int srcTab = -1, srcIdx = -1, dstTab = -1, dstIdx = -1;
-    for (int t = 0; t < (int)m_containers.size(); ++t) {
-        for (int i = 0; i < (int)m_containers[t].size(); ++i) {
-            if (m_containers[t][i] == src) { srcTab = t; srcIdx = i; }
-            if (m_containers[t][i] == dst) { dstTab = t; dstIdx = i; }
+    // find destination position dynamically
+    auto findPos = [this](SoundContainer* sc) -> std::pair<int,int> {
+        if (!sc) return {-1,-1};
+        QWidget* page = sc->parentWidget();
+        if (!page) return {-1,-1};
+        int tabIndex = m_tabs->indexOf(page);
+        if (tabIndex < 0) return {-1,-1};
+        QGridLayout* layout = qobject_cast<QGridLayout*>(page->layout());
+        if (!layout) return {tabIndex, -1};
+        int rows = 4, cols = 8;
+        for (int r = 0; r < rows; ++r) {
+            for (int c = 0; c < cols; ++c) {
+                QLayoutItem* it = layout->itemAtPosition(r, c);
+                if (it && it->widget() == sc) return {tabIndex, r * cols + c};
+            }
         }
-    }
+        return {tabIndex, -1};
+    };
+
+    auto dPos = findPos(dst);
+    int dstTab = dPos.first, dstIdx = dPos.second;
+    Q_UNUSED(src); Q_UNUSED(dst); Q_UNUSED(dstTab); Q_UNUSED(dstIdx);
     if (dstTab == -1 || dstIdx == -1) return;
 
     // Save previous dst state for undo
@@ -294,9 +523,59 @@ void MainWindow::onCopyRequested(SoundContainer* src, SoundContainer* dst)
     op.newFile = dst->file();
     op.newVolume = dst->volume();
     m_undoStack.push_back(op);
+    writeDebugLog(QString("pushed CopyReplace op tab=%1 idx=%2 prevFile=%3 prevVol=%4 newFile=%5 newVol=%6 stackSize=%7")
+                  .arg(op.tab).arg(op.dstIdx).arg(op.prevFile).arg(op.prevVolume).arg(op.newFile).arg(op.newVolume).arg(m_undoStack.size()));
     m_redoStack.clear();
     if (m_undoAction) m_undoAction->setEnabled(true);
     if (m_redoAction) m_redoAction->setEnabled(false);
+    // Rebuild internal mapping from the UI to avoid stale index issues
+    syncContainersWithUi();
+}
+
+void MainWindow::onClearRequested(SoundContainer* sc)
+{
+    if (!sc) return;
+    // find the position of this container
+    auto findPos = [this](SoundContainer* sc) -> std::pair<int,int> {
+        if (!sc) return {-1,-1};
+        QWidget* page = sc->parentWidget();
+        if (!page) return {-1,-1};
+        int tabIndex = m_tabs->indexOf(page);
+        if (tabIndex < 0) return {-1,-1};
+        QGridLayout* layout = qobject_cast<QGridLayout*>(page->layout());
+        if (!layout) return {tabIndex, -1};
+        int rows = 4, cols = 8;
+        for (int r = 0; r < rows; ++r) {
+            for (int c = 0; c < cols; ++c) {
+                QLayoutItem* it = layout->itemAtPosition(r, c);
+                if (it && it->widget() == sc) return {tabIndex, r * cols + c};
+            }
+        }
+        return {tabIndex, -1};
+    };
+
+    auto pos = findPos(sc);
+    int tab = pos.first, idx = pos.second;
+    if (tab == -1 || idx == -1) return;
+
+    // record previous state for undo
+    Operation op;
+    op.type = Operation::Clear;
+    op.tab = tab;
+    op.dstIdx = idx;
+    op.prevFile = sc->file();
+    op.prevVolume = sc->volume();
+    m_undoStack.push_back(op);
+    writeDebugLog(QString("onClearRequested: sc=%1 tab=%2 idx=%3 prevFile=%4 prevVol=%5 stackSize=%6")
+                  .arg(reinterpret_cast<uintptr_t>(sc)).arg(tab).arg(idx).arg(op.prevFile).arg(op.prevVolume).arg(m_undoStack.size()));
+    m_redoStack.clear();
+    if (m_undoAction) m_undoAction->setEnabled(true);
+    if (m_redoAction) m_redoAction->setEnabled(false);
+
+    // perform clear
+    sc->setFile(QString());
+    sc->setVolume(0.8f);
+    syncContainersWithUi();
 }
 
 void MainWindow::keyPressEvent(QKeyEvent* event)
@@ -459,73 +738,178 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
     return QMainWindow::eventFilter(obj, event);
 }
 
-void MainWindow::undoRename()
+void MainWindow::performUndo()
 {
+    writeDebugLog(QString("performUndo called stackSize=%1").arg(m_undoStack.size()));
     if (m_undoStack.empty()) return;
     Operation op = m_undoStack.back();
     m_undoStack.pop_back();
-    if (op.type == Operation::Rename) {
-        if (op.index >= 0 && op.index < m_tabs->count()) {
-            m_tabs->setTabText(op.index, op.oldName);
-            m_redoStack.push_back(op);
-        }
-    } else if (op.type == Operation::Swap) {
-        // swap back
-        if (op.tab >= 0 && op.tab < (int)m_containers.size()) {
-            int s = op.srcIdx; int d = op.dstIdx;
-            if (s >= 0 && s < (int)m_containers[op.tab].size() && d >= 0 && d < (int)m_containers[op.tab].size()) {
-                // perform swap in data
-                std::swap(m_containers[op.tab][s], m_containers[op.tab][d]);
-                // update layouts
-                QWidget* tabWidget = m_tabs->widget(op.tab);
-                if (tabWidget) {
-                    QGridLayout* layout = qobject_cast<QGridLayout*>(tabWidget->layout());
-                    if (layout) {
-                        int cols = 8; // same layout grid used when creating
-                        int rs = s / cols; int cs = s % cols;
-                        int rd = d / cols; int cd = d % cols;
-                        layout->addWidget(m_containers[op.tab][s], rs, cs);
-                        layout->addWidget(m_containers[op.tab][d], rd, cd);
-                    }
-                }
-                m_redoStack.push_back(op);
-            }
-        }
+    switch (op.type) {
+    case Operation::Rename: undoRenameOp(op); break;
+    case Operation::Swap: undoSwap(op); break;
+    case Operation::CopyReplace: /* copy/replace undo handled by same as clear/copy logic */ undoSwap(op); break;
+    case Operation::Clear: undoClear(op); break;
+    case Operation::TabMove: undoTabMove(op); break;
+    default: break;
     }
     if (m_undoAction) m_undoAction->setEnabled(!m_undoStack.empty());
     if (m_redoAction) m_redoAction->setEnabled(!m_redoStack.empty());
 }
 
-void MainWindow::redoRename()
+void MainWindow::undoTabMove(const Operation& op)
 {
+    if (!op.movePage) return;
+    int curFrom = m_tabs->indexOf(op.movePage);
+    int curTo = op.moveFrom;
+    writeDebugLog(QString("undo TabMove: movePage=%1 curFrom=%2 curTo=%3")
+                  .arg(reinterpret_cast<uintptr_t>(op.movePage)).arg(curFrom).arg(curTo));
+    if (curFrom >= 0 && curTo >= 0 && curTo < m_tabs->count()) {
+        QWidget* page = op.movePage;
+        QString txt = m_tabs->tabText(curFrom);
+        QIcon ic = m_tabs->tabIcon(curFrom);
+        m_tabs->removeTab(curFrom);
+        m_tabs->insertTab(curTo, page, ic, txt);
+        auto moving = std::move(m_containers[curFrom]);
+        if (curFrom < curTo) {
+            for (int i = curFrom; i < curTo; ++i) m_containers[i] = std::move(m_containers[i + 1]);
+            m_containers[curTo] = std::move(moving);
+        } else {
+            for (int i = curFrom; i > curTo; --i) m_containers[i] = std::move(m_containers[i - 1]);
+            m_containers[curTo] = std::move(moving);
+        }
+        m_redoStack.push_back(op);
+        writeDebugLog(QString("undo TabMove done: moved page=%1 to %2")
+                      .arg(reinterpret_cast<uintptr_t>(op.movePage)).arg(curTo));
+    }
+}
+
+void MainWindow::undoSwap(const Operation& op)
+{
+    if (op.tab < 0 || op.tab >= (int)m_containers.size()) return;
+    int s = op.srcIdx; int d = op.dstIdx;
+    if (s < 0 || d < 0) return;
+    if (s >= (int)m_containers[op.tab].size() || d >= (int)m_containers[op.tab].size()) return;
+    writeDebugLog(QString("undo Swap: tab=%1 s=%2 d=%3").arg(op.tab).arg(s).arg(d));
+    std::swap(m_containers[op.tab][s], m_containers[op.tab][d]);
+    QWidget* tabWidget = m_tabs->widget(op.tab);
+    if (tabWidget) {
+        QGridLayout* layout = qobject_cast<QGridLayout*>(tabWidget->layout());
+        if (layout) {
+            int cols = 8;
+            int rs = s / cols; int cs = s % cols;
+            int rd = d / cols; int cd = d % cols;
+            layout->addWidget(m_containers[op.tab][s], rs, cs);
+            layout->addWidget(m_containers[op.tab][d], rd, cd);
+        }
+    }
+    writeDebugLog(QString("undo Swap done: tab=%1 s=%2 d=%3").arg(op.tab).arg(s).arg(d));
+    m_redoStack.push_back(op);
+}
+
+void MainWindow::undoClear(const Operation& op)
+{
+    if (op.tab < 0 || op.tab >= (int)m_containers.size()) return;
+    int idx = op.dstIdx;
+    if (idx < 0 || idx >= (int)m_containers[op.tab].size()) return;
+    SoundContainer* sc = m_containers[op.tab][idx];
+    if (!sc) return;
+    sc->setFile(op.prevFile);
+    sc->setVolume(op.prevVolume);
+    m_redoStack.push_back(op);
+}
+
+void MainWindow::undoRenameOp(const Operation& op)
+{
+    if (op.index >= 0 && op.index < m_tabs->count()) {
+        m_tabs->setTabText(op.index, op.oldName);
+        m_redoStack.push_back(op);
+    }
+}
+
+void MainWindow::performRedo()
+{
+    writeDebugLog(QString("performRedo called stackSize=%1").arg(m_redoStack.size()));
     if (m_redoStack.empty()) return;
     Operation op = m_redoStack.back();
     m_redoStack.pop_back();
-    if (op.type == Operation::Rename) {
-        if (op.index >= 0 && op.index < m_tabs->count()) {
-            m_tabs->setTabText(op.index, op.newName);
-            m_undoStack.push_back(op);
-        }
-    } else if (op.type == Operation::Swap) {
-        if (op.tab >= 0 && op.tab < (int)m_containers.size()) {
-            int s = op.srcIdx; int d = op.dstIdx;
-            if (s >= 0 && s < (int)m_containers[op.tab].size() && d >= 0 && d < (int)m_containers[op.tab].size()) {
-                std::swap(m_containers[op.tab][s], m_containers[op.tab][d]);
-                QWidget* tabWidget = m_tabs->widget(op.tab);
-                if (tabWidget) {
-                    QGridLayout* layout = qobject_cast<QGridLayout*>(tabWidget->layout());
-                    if (layout) {
-                        int cols = 8;
-                        int rs = s / cols; int cs = s % cols;
-                        int rd = d / cols; int cd = d % cols;
-                        layout->addWidget(m_containers[op.tab][s], rs, cs);
-                        layout->addWidget(m_containers[op.tab][d], rd, cd);
-                    }
-                }
-                m_undoStack.push_back(op);
-            }
-        }
+    switch (op.type) {
+    case Operation::Rename: redoRenameOp(op); break;
+    case Operation::Swap: redoSwap(op); break;
+    case Operation::CopyReplace: /* treat as swap/copy */ redoSwap(op); break;
+    case Operation::Clear: redoClear(op); break;
+    case Operation::TabMove: redoTabMove(op); break;
+    default: break;
     }
     if (m_undoAction) m_undoAction->setEnabled(!m_undoStack.empty());
     if (m_redoAction) m_redoAction->setEnabled(!m_redoStack.empty());
+}
+
+void MainWindow::redoTabMove(const Operation& op)
+{
+    if (!op.movePage) return;
+    int curFrom = m_tabs->indexOf(op.movePage);
+    int curTo = op.moveTo;
+    writeDebugLog(QString("redo TabMove: movePage=%1 curFrom=%2 curTo=%3")
+                  .arg(reinterpret_cast<uintptr_t>(op.movePage)).arg(curFrom).arg(curTo));
+    if (curFrom >= 0 && curTo >= 0 && curTo < m_tabs->count()) {
+        QWidget* page = op.movePage;
+        QString txt = m_tabs->tabText(curFrom);
+        QIcon ic = m_tabs->tabIcon(curFrom);
+        m_tabs->removeTab(curFrom);
+        m_tabs->insertTab(curTo, page, ic, txt);
+        auto moving = std::move(m_containers[curFrom]);
+        if (curFrom < curTo) {
+            for (int i = curFrom; i < curTo; ++i) m_containers[i] = std::move(m_containers[i + 1]);
+            m_containers[curTo] = std::move(moving);
+        } else {
+            for (int i = curFrom; i > curTo; --i) m_containers[i] = std::move(m_containers[i - 1]);
+            m_containers[curTo] = std::move(moving);
+        }
+        m_undoStack.push_back(op);
+        writeDebugLog(QString("redo TabMove done: moved page=%1 to %2")
+                      .arg(reinterpret_cast<uintptr_t>(op.movePage)).arg(curTo));
+    }
+}
+
+void MainWindow::redoSwap(const Operation& op)
+{
+    if (op.tab < 0 || op.tab >= (int)m_containers.size()) return;
+    int s = op.srcIdx; int d = op.dstIdx;
+    if (s < 0 || d < 0) return;
+    if (s >= (int)m_containers[op.tab].size() || d >= (int)m_containers[op.tab].size()) return;
+    writeDebugLog(QString("redo Swap: tab=%1 s=%2 d=%3").arg(op.tab).arg(s).arg(d));
+    std::swap(m_containers[op.tab][s], m_containers[op.tab][d]);
+    QWidget* tabWidget = m_tabs->widget(op.tab);
+    if (tabWidget) {
+        QGridLayout* layout = qobject_cast<QGridLayout*>(tabWidget->layout());
+        if (layout) {
+            int cols = 8;
+            int rs = s / cols; int cs = s % cols;
+            int rd = d / cols; int cd = d % cols;
+            layout->addWidget(m_containers[op.tab][s], rs, cs);
+            layout->addWidget(m_containers[op.tab][d], rd, cd);
+        }
+    }
+    writeDebugLog(QString("redo Swap done: tab=%1 s=%2 d=%3").arg(op.tab).arg(s).arg(d));
+    m_undoStack.push_back(op);
+}
+
+void MainWindow::redoClear(const Operation& op)
+{
+    if (op.tab < 0 || op.tab >= (int)m_containers.size()) return;
+    int idx = op.dstIdx;
+    if (idx < 0 || idx >= (int)m_containers[op.tab].size()) return;
+    SoundContainer* sc = m_containers[op.tab][idx];
+    if (!sc) return;
+    sc->setFile(QString());
+    sc->setVolume(0.8f);
+    m_undoStack.push_back(op);
+}
+
+void MainWindow::redoRenameOp(const Operation& op)
+{
+    if (op.index >= 0 && op.index < m_tabs->count()) {
+        m_tabs->setTabText(op.index, op.newName);
+        m_undoStack.push_back(op);
+    }
 }

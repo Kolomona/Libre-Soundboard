@@ -22,6 +22,9 @@ protected:
 private slots:
     void onTabMoved(int from, int to);
 
+signals:
+    void tabOrderChanged();
+
 private:
     int m_pressIndex = -1;
     QPoint m_pressPos;

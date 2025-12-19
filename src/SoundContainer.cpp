@@ -4,6 +4,7 @@
 #include <QLabel>
 #include <QSlider>
 #include <QVBoxLayout>
+#include <QSizePolicy>
 #include <QDragEnterEvent>
 #include <QMimeData>
 #include <QFileInfo>
@@ -17,6 +18,9 @@
 #include <QPixmap>
 #include <QPainter>
 #include <QFont>
+#include <QDateTime>
+#include <QFile>
+#include <unistd.h>
 
 namespace {
 static QPixmap makeDragCursorPixmap(const QString& text)
@@ -39,6 +43,18 @@ static QPixmap makeDragCursorPixmap(const QString& text)
     p.drawText(pm.rect(), Qt::AlignCenter, text);
     return pm;
 }
+
+static void writeLocalDebug(const QString& msg)
+{
+    QString path = QStringLiteral("/tmp/libresoundboard-debug.log");
+    QString line = QDateTime::currentDateTime().toString(Qt::ISODate) + " [" + QString::number(getpid()) + "] " + msg + "\n";
+    QFile f(path);
+    if (f.open(QIODevice::Append | QIODevice::Text)) {
+        f.write(line.toUtf8());
+        f.close();
+    }
+    qDebug().noquote() << line.trimmed();
+}
 }
 
 SoundContainer::SoundContainer(QWidget* parent)
@@ -47,7 +63,8 @@ SoundContainer::SoundContainer(QWidget* parent)
     auto layout = new QVBoxLayout(this);
     m_waveform = new QLabel(tr("Drop audio file here"), this);
     m_waveform->setMinimumSize(160, 80);
-    m_waveform->setAlignment(Qt::AlignCenter);
+    m_waveform->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_waveform->setIndent(6);
 
     m_playBtn = new QPushButton(tr("Play"), this);
     layout->addWidget(m_waveform);
@@ -55,9 +72,12 @@ SoundContainer::SoundContainer(QWidget* parent)
     m_volume = new QSlider(Qt::Horizontal, this);
     m_volume->setRange(0, 100);
     m_volume->setValue(80);
+    // Make the slider expand horizontally to fill the container width
+    m_volume->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     layout->addWidget(m_volume);
 
     layout->addWidget(m_playBtn);
+    layout->setAlignment(m_playBtn, Qt::AlignLeft);
     setLayout(layout);
 
     setAcceptDrops(true);
@@ -236,6 +256,11 @@ void SoundContainer::contextMenuEvent(QContextMenuEvent* event)
         menu.addAction(tr("Play Sound"), this, [this]() {
             emit playRequested(m_filePath, this);
         });
+        // allow clearing this container back to the default state
+        menu.addAction(tr("Clear"), this, [this]() {
+            // request clear via signal so MainWindow can record undo/redo
+            emit clearRequested(this);
+        });
     } else {
         QAction* a = menu.addAction(tr("Play Sound"));
         a->setEnabled(false);
@@ -247,6 +272,17 @@ void SoundContainer::setFile(const QString& path)
 {
     if (path == m_filePath)
         return;
+
+    if (path.isEmpty()) {
+        // Clear to default state
+        m_filePath.clear();
+        m_waveform->setText(tr("Drop audio file here"));
+        m_waveform->setToolTip(QString());
+        setVolume(0.8f);
+        emit fileChanged(QString());
+        return;
+    }
+
     m_filePath = path;
     QFileInfo fi(path);
     m_waveform->setText(fi.fileName());
@@ -315,8 +351,13 @@ void SoundContainer::dropEvent(QDropEvent* event)
                 // the context menu on the subsequent mouse release
                 m_justDropped = true;
                 QTimer::singleShot(300, this, [this]() { m_justDropped = false; });
-                if (isCopy) emit copyRequested(src, this);
-                else emit swapRequested(src, this);
+                if (isCopy) {
+                    writeLocalDebug(QString("copyRequested emitted src=%1 dst=%2").arg(reinterpret_cast<uintptr_t>(src)).arg(reinterpret_cast<uintptr_t>(this)));
+                    emit copyRequested(src, this);
+                } else {
+                    writeLocalDebug(QString("swapRequested emitted src=%1 dst=%2").arg(reinterpret_cast<uintptr_t>(src)).arg(reinterpret_cast<uintptr_t>(this)));
+                    emit swapRequested(src, this);
+                }
                 event->acceptProposedAction();
                 return;
             }

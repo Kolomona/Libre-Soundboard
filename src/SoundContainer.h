@@ -29,6 +29,7 @@ signals:
     void stopRequested(const QString& path, SoundContainer* self);
     void fileChanged(const QString& path);
     void volumeChanged(float volume);
+    void clearRequested(SoundContainer* self);
 
 public:
     // Volume in range [0.0, 1.0]

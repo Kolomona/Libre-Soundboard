@@ -9,6 +9,7 @@ class QTabWidget;
 class CustomTabWidget;
 class SoundContainer;
 class QKeyEvent;
+class QWidget;
 
 /**
  * Main application window. Contains the menu and central grid layout.
@@ -24,22 +25,29 @@ public slots:
     void onPlayRequested(const QString& path, SoundContainer* src);
     void onSwapRequested(SoundContainer* src, SoundContainer* dst);
     void onCopyRequested(SoundContainer* src, SoundContainer* dst);
+    void onClearRequested(SoundContainer* sc);
+    void onTabMoved(int from, int to);
+    void onTabOrderChanged();
     void saveLayout();
     void restoreLayout();
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
     bool eventFilter(QObject* obj, QEvent* event) override;
-    void undoRename();
-    void redoRename();
+    void performUndo();
+    void performRedo();
 
 private:
     struct Operation {
-        enum Type { Rename, Swap, CopyReplace } type;
+        enum Type { Rename, Swap, CopyReplace, Clear, TabMove } type;
         // Rename data
         int index = -1;
         QString oldName;
         QString newName;
+        // Tab move data
+        int moveFrom = -1;
+        int moveTo = -1;
+        QWidget* movePage = nullptr;
         // Swap data
         int tab = -1;
         int srcIdx = -1;
@@ -50,6 +58,15 @@ private:
         QString newFile;
         float newVolume = 1.0f;
     };
+    // Per-operation undo/redo helpers
+    void undoTabMove(const Operation& op);
+    void redoTabMove(const Operation& op);
+    void undoSwap(const Operation& op);
+    void redoSwap(const Operation& op);
+    void undoClear(const Operation& op);
+    void redoClear(const Operation& op);
+    void undoRenameOp(const Operation& op);
+    void redoRenameOp(const Operation& op);
     std::vector<Operation> m_undoStack;
     std::vector<Operation> m_redoStack;
     QAction* m_undoAction = nullptr;
@@ -60,4 +77,6 @@ private:
     // containers[tabIndex][slotIndex]
     std::vector<std::vector<SoundContainer*>> m_containers;
     QString m_layoutPath;
+    void syncContainersWithUi();
+    void writeDebugLog(const QString& msg);
 };
