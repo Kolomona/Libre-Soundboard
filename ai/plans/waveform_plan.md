@@ -5,10 +5,10 @@ Purpose: implement resizable waveform thumbnails per `SoundContainer` with a che
 Phases (each phase is session-sized; use checkboxes to track progress):
 
 ## Phase 1 — Worker infra
-- [ ] Add a worker abstraction for waveform jobs (enqueue, cancel, status).
-- [ ] Create a small threadpool or reuse existing app thread pool.
-- [ ] Define data types: `WaveformJob` (path, desired pixel width, DPR), `WaveformResult` (minmax arrays, duration, sample-rate, channels).
-- [ ] Provide queued signal from worker -> UI for completion and error.
+- [x] Add a worker abstraction for waveform jobs (enqueue, cancel, status).
+- [x] Create a small threadpool or reuse existing app thread pool.
+- [x] Define data types: `WaveformJob` (path, desired pixel width, DPR), `WaveformResult` (minmax arrays, duration, sample-rate, channels).
+- [x] Provide queued signal from worker -> UI for completion and error.
 
 For human Testing:
 - Start the app; verify no UI regressions and that worker code compiles.

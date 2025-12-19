@@ -169,5 +169,3 @@ cmake --build . --target format
 - CPack support exists and can produce .deb packages (or other targets) from the CMake install rules. A `.deb` or AppImage is recommended for end users; Flatpak is also viable but requires audio sandboxing considerations for JACK/PipeWire.
 
 If you want I can add AppImage / `.deb` packaging manifests, CI scripts, or extend the test suite next.
-
-If you want I can add AppImage/DEB packaging, CI scripts, or extend the test suite next.

@@ -11,6 +11,8 @@ add_library(libresoundboard_core STATIC
     AudioEnginePlay.h
     WaveformWidget.cpp
     WaveformWidget.h
+    WaveformWorker.cpp
+    WaveformWorker.h
     AudioFile.cpp
     AudioFile.h
     SingleInstance.cpp
