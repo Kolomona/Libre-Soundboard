@@ -31,6 +31,8 @@ public:
     // Notify manager that playback was started/stopped for an id (used when AudioEngine isn't available)
     void playbackStarted(const QString& id, SoundContainer* sc);
     void playbackStopped(const QString& id, SoundContainer* sc);
+    // Notify manager that all playback stopped (clear all playheads)
+    void stopAll();
 
 private slots:
     void onTick();

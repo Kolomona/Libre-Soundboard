@@ -636,6 +636,8 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
     if (event->key() == Qt::Key_Escape) {
         m_audioEngine.stopAll();
         statusBar()->showMessage(tr("Stopped all audio"), 1000);
+        // Notify playhead manager to clear any UI playheads as audio stopped
+        PlayheadManager::instance()->stopAll();
         return;
     }
 

@@ -78,8 +78,7 @@ static QPixmap makeDragCursorPixmap(const QString& text)
 
 static void writeLocalDebug(const QString& msg)
 {
-    // do not write to disk; keep qDebug output only
-    qDebug().noquote() << msg;
+    Q_UNUSED(msg);
 }
 }
 
@@ -168,7 +167,6 @@ SoundContainer::SoundContainer(QWidget* parent)
 // Worker signal handlers
 void SoundContainer::onWaveformReady(const WaveformJob& job, const WaveformResult& result)
 {
-    qDebug() << "onWaveformReady called job.id=" << job.id << "pending=" << m_pendingJobId << "path=" << job.path << "res.samples=" << result.min.size();
     if (job.id != m_pendingJobId) return;
 
     // Use the waveform widget's logical size as the authoritative width/height
@@ -201,7 +199,7 @@ void SoundContainer::onWaveformReady(const WaveformJob& job, const WaveformResul
             int targetWpx = static_cast<int>(std::floor(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
             // Use ceil for height to ensure we preserve the visual height
             int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
-            qDebug() << "scale->widget labelSize=" << labelSize << "widgetDpr=" << widgetDpr << "srcPixmap=" << m_wavePixmap.size() << "srcDpr=" << m_wavePixmap.devicePixelRatio() << "targetPx=" << QSize(targetWpx, targetHpx);
+            Q_UNUSED(widgetDpr); Q_UNUSED(targetWpx); Q_UNUSED(targetHpx); Q_UNUSED(containerW); Q_UNUSED(containerH);
             QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
             scaled.setDevicePixelRatio(widgetDpr);
             m_waveform->setText(QString());
@@ -229,7 +227,6 @@ void SoundContainer::onWaveformReady(const WaveformJob& job, const WaveformResul
         meta["height"] = img.height();
         meta["duration"] = result.duration;
         QString cacheDir = WaveformCache::cacheDirPath();
-        qDebug() << "WaveformCache::write key=" << key << "dir=" << cacheDir;
         WaveformCache::write(key, img, meta);
 
         // Register this container with the playhead manager so it can receive updates
@@ -239,7 +236,7 @@ void SoundContainer::onWaveformReady(const WaveformJob& job, const WaveformResul
 
 void SoundContainer::onWaveformError(const WaveformJob& job, const QString& err)
 {
-    qDebug() << "onWaveformError job.id=" << job.id << "err=" << err;
+    qWarning() << "onWaveformError job.id=" << job.id << "err=" << err;
     Q_UNUSED(job);
     Q_UNUSED(err);
     // For now, just clear waveform display and if no file is set restore default appearance
@@ -492,7 +489,7 @@ void SoundContainer::setFile(const QString& path)
                     qreal widgetDpr = devicePixelRatioF();
                     int targetWpx = static_cast<int>(std::floor(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
                     int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
-                    qDebug() << "resize->cache labelSize=" << labelSize << "widgetDpr=" << widgetDpr << "srcPixmap=" << m_wavePixmap.size() << "srcDpr=" << m_wavePixmap.devicePixelRatio() << "targetPx=" << QSize(targetWpx, targetHpx);
+                    Q_UNUSED(widgetDpr); Q_UNUSED(targetWpx); Q_UNUSED(targetHpx); Q_UNUSED(containerW); Q_UNUSED(containerH);
                     QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
                     scaled.setDevicePixelRatio(widgetDpr);
                     m_waveform->setText(QString());
@@ -609,7 +606,7 @@ void SoundContainer::resizeEvent(QResizeEvent* event)
                     qreal widgetDpr = devicePixelRatioF();
                     int targetWpx = static_cast<int>(std::ceil(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
                     int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
-                    qDebug() << "setfile->cache labelSize=" << labelSize << "widgetDpr=" << widgetDpr << "srcPixmap=" << m_wavePixmap.size() << "srcDpr=" << m_wavePixmap.devicePixelRatio() << "targetPx=" << QSize(targetWpx, targetHpx);
+                    Q_UNUSED(widgetDpr); Q_UNUSED(targetWpx); Q_UNUSED(targetHpx); Q_UNUSED(containerW); Q_UNUSED(containerH);
                     QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
                     scaled.setDevicePixelRatio(widgetDpr);
                     m_waveform->setText(QString());
@@ -663,7 +660,7 @@ void SoundContainer::setPlayheadPosition(float pos)
                     qreal widgetDpr = devicePixelRatioF();
                     int targetWpx = static_cast<int>(std::ceil(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
                     int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
-                    qDebug() << "playhead-restore labelSize=" << labelSize << "widgetDpr=" << widgetDpr << "srcPixmap=" << m_wavePixmap.size() << "srcDpr=" << m_wavePixmap.devicePixelRatio() << "targetPx=" << QSize(targetWpx, targetHpx);
+                    Q_UNUSED(widgetDpr); Q_UNUSED(targetWpx); Q_UNUSED(targetHpx); Q_UNUSED(containerW); Q_UNUSED(containerH);
                     QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
                     scaled.setDevicePixelRatio(widgetDpr);
                     m_waveform->setText(QString());
@@ -690,7 +687,7 @@ void SoundContainer::setPlayheadPosition(float pos)
         // We rely on `paintEvent` to draw the transient playhead overlay above the waveform
         // to avoid mutating the cached pixmap and producing duplicate playheads.
     }
-    // Log to debug file and update UI
+    // Log to debug file and update UI (help trace stop behavior)
     writeLocalDebug(QString("setPlayheadPosition this=%1 pos=%2 playing=%3").arg(reinterpret_cast<uintptr_t>(this)).arg(pos).arg(m_playing));
     update();
 }

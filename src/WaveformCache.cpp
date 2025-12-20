@@ -55,7 +55,6 @@ QString WaveformCache::makeKey(const QString& path, qint64 size, qint64 mtime, i
 
 bool WaveformCache::write(const QString& key, const QImage& image, const QJsonObject& metadata) {
     QString dir = cacheDirPath();
-    qDebug() << "WaveformCache::write called key=" << key << "dir=" << dir;
     QDir d(dir);
     QString imgPath = d.filePath(key + ".png");
     QString metaPath = d.filePath(key + ".json");
@@ -85,7 +84,7 @@ bool WaveformCache::write(const QString& key, const QImage& image, const QJsonOb
         return false;
     }
 
-    qDebug() << "WaveformCache::write success" << imgPath << metaPath;
+    // write success (quiet)
 
     return true;
 }

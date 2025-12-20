@@ -51,7 +51,6 @@ WaveformWorker::WaveformWorker(QObject* parent)
     : QObject(parent) {
     qRegisterMetaType<WaveformJob>("WaveformJob");
     qRegisterMetaType<WaveformResult>("WaveformResult");
-    qDebug() << "WaveformWorker initialized";
 }
 
 WaveformWorker::~WaveformWorker() {
@@ -75,7 +74,6 @@ QUuid WaveformWorker::enqueueJob(const QString& path, int pixelWidth, qreal dpr)
     auto* r = new WaveformRunnable(job, this);
     QThreadPool::globalInstance()->start(r);
 
-    qDebug() << "Enqueued waveform job" << job.id << job.path << "px" << pixelWidth << "dpr" << dpr;
     return job.id;
 }
 
@@ -85,7 +83,6 @@ void WaveformWorker::cancelJob(const QUuid& id) {
         auto t = m_tokens.value(id);
         if (!t.isNull()) t->storeRelaxed(1);
         m_tokens.remove(id);
-        qDebug() << "cancelJob: requested cancel for" << id;
     }
 }
 

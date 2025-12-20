@@ -24,8 +24,8 @@ PlayheadManager::PlayheadManager(QObject* parent)
 
 static void writeDebugLogPM(const QString &msg)
 {
-    // keep qDebug output for developer visibility, but do not write to disk
-    qDebug().noquote() << "[PM]" << msg;
+    // Intentionally silent in normal runs to avoid log spam.
+    Q_UNUSED(msg);
 }
 
 PlayheadManager::~PlayheadManager()
@@ -117,6 +117,22 @@ void PlayheadManager::unregisterContainer(const QString& id, SoundContainer* sc)
         if (list[i].sc == sc) list.removeAt(i);
     }
     if (list.isEmpty()) m_map.remove(id);
+}
+
+void PlayheadManager::stopAll()
+{
+    // Clear simulated and reported playback state for all registered containers
+    writeDebugLogPM(QString("stopAll called; clearing %1 file entries").arg(m_map.size()));
+    for (auto it = m_map.begin(); it != m_map.end(); ++it) {
+        auto &list = it.value();
+        for (auto &e : list) {
+            if (!e.sc) continue;
+            writeDebugLogPM(QString("stopAll -> clearing container %1 (lastPos=%2)").arg(reinterpret_cast<uintptr_t>(e.sc)).arg(e.lastPos));
+            e.simStartMs = -1;
+            e.lastPos = -1.0f;
+            e.sc->setPlayheadPosition(-1.0f);
+        }
+    }
 }
 
 float PlayheadManager::getLastPos(const QString& id, SoundContainer* sc) const
