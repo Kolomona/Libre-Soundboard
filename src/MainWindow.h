@@ -56,6 +56,9 @@ private:
         // CopyReplace data
         QString prevFile;
         float prevVolume = 1.0f;
+        // previous backdrop color stored as ARGB (QColor::rgba()), and flag if present
+        quint32 prevBackdrop = 0;
+        bool hadBackdrop = false;
         QString newFile;
         float newVolume = 1.0f;
     };

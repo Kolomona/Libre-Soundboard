@@ -629,6 +629,15 @@ void MainWindow::onClearRequested(SoundContainer* sc)
     op.dstIdx = idx;
     op.prevFile = sc->file();
     op.prevVolume = sc->volume();
+    // record previous backdrop color
+    QColor prev = sc->backdropColor();
+    if (prev.isValid()) {
+        op.hadBackdrop = true;
+        op.prevBackdrop = prev.rgba();
+    } else {
+        op.hadBackdrop = false;
+        op.prevBackdrop = 0;
+    }
     m_undoStack.push_back(op);
     writeDebugLog(QString("onClearRequested: sc=%1 tab=%2 idx=%3 prevFile=%4 prevVol=%5 stackSize=%6")
                   .arg(reinterpret_cast<uintptr_t>(sc)).arg(tab).arg(idx).arg(op.prevFile).arg(op.prevVolume).arg(m_undoStack.size()));
@@ -639,6 +648,8 @@ void MainWindow::onClearRequested(SoundContainer* sc)
     // perform clear
     sc->setFile(QString());
     sc->setVolume(0.8f);
+    // also clear any user-selected backdrop color for this slot
+    sc->setBackdropColor(QColor());
     syncContainersWithUi();
 }
 
@@ -687,6 +698,10 @@ void MainWindow::saveLayout()
             QJsonObject obj;
             obj["file"] = sc ? sc->file() : QString();
             obj["volume"] = sc ? sc->volume() : 1.0;
+            if (sc && sc->backdropColor().isValid()) {
+                // store as ARGB integer
+                obj["backdrop"] = static_cast<double>(sc->backdropColor().rgba());
+            }
             slotArr.append(obj);
         }
         tabsArr.append(slotArr);
@@ -751,6 +766,12 @@ void MainWindow::restoreLayout()
             QString path = obj.value("file").toString();
             double vol = obj.value("volume").toDouble(1.0);
             SoundContainer* sc = m_containers[t][s];
+            // restore backdrop color if present
+            if (sc && obj.contains("backdrop")) {
+                quint32 rgba = static_cast<quint32>(static_cast<uint64_t>(obj.value("backdrop").toDouble()));
+                QColor c = QColor::fromRgba(rgba);
+                sc->setBackdropColor(c);
+            }
             if (sc) {
                 if (!path.isEmpty()) sc->setFile(path);
                 sc->setVolume(static_cast<float>(vol));
@@ -881,6 +902,9 @@ void MainWindow::undoClear(const Operation& op)
     if (!sc) return;
     sc->setFile(op.prevFile);
     sc->setVolume(op.prevVolume);
+    // restore previous backdrop color if any
+    if (op.hadBackdrop) sc->setBackdropColor(QColor::fromRgba(op.prevBackdrop));
+    else sc->setBackdropColor(QColor());
     m_redoStack.push_back(op);
 }
 
@@ -969,6 +993,8 @@ void MainWindow::redoClear(const Operation& op)
     if (!sc) return;
     sc->setFile(QString());
     sc->setVolume(0.8f);
+    // clear backdrop color on redo of clear
+    sc->setBackdropColor(QColor());
     m_undoStack.push_back(op);
 }
 

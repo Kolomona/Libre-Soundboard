@@ -89,4 +89,12 @@ private:
     float m_playheadPos = -1.0f;
     // Reset the container UI to its default (untouched) appearance
     void resetToDefaultAppearance();
+    // Backdrop color for transparent waveform images. If invalid, no backdrop applied.
+    QColor m_backdropColor = QColor();
+    // Compose `m_wavePixmap` with the backdrop and set it on `m_waveform` scaled
+    void applyWaveformPixmapWithBackdrop(int targetWpx, int targetHpx);
+public:
+    // Persisted backdrop color accessors
+    void setBackdropColor(const QColor& c);
+    QColor backdropColor() const;
 };

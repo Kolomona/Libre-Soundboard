@@ -16,6 +16,8 @@
 #include <QContextMenuEvent>
 #include <QTimer>
 #include <QPixmap>
+#include <QColorDialog>
+#include <QSettings>
 #include <QPainter>
 #include <QFont>
 #include <QDateTime>
@@ -189,22 +191,18 @@ void SoundContainer::onWaveformReady(const WaveformJob& job, const WaveformResul
 
     m_wavePixmap = QPixmap::fromImage(img);
     m_hasWavePixmap = true;
-        {
-            // Force the pixmap to the container's logical height (ignore aspect ratio)
-            QSize labelSize = availableDisplaySize();
-            int containerW = labelSize.width();
-            int containerH = labelSize.height();
-            qreal widgetDpr = devicePixelRatioF();
-            // Use floor for width so the logical pixmap width never exceeds the container
-            int targetWpx = static_cast<int>(std::floor(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
-            // Use ceil for height to ensure we preserve the visual height
-            int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
-            Q_UNUSED(widgetDpr); Q_UNUSED(targetWpx); Q_UNUSED(targetHpx); Q_UNUSED(containerW); Q_UNUSED(containerH);
-            QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-            scaled.setDevicePixelRatio(widgetDpr);
-            m_waveform->setText(QString());
-            m_waveform->setPixmap(scaled);
-        }
+    {
+        // Force the pixmap to the container's logical height (ignore aspect ratio)
+        QSize labelSize = availableDisplaySize();
+        int containerW = labelSize.width();
+        int containerH = labelSize.height();
+        qreal widgetDpr = devicePixelRatioF();
+        // Use floor for width so the logical pixmap width never exceeds the container
+        int targetWpx = static_cast<int>(std::floor(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
+        // Use ceil for height to ensure we preserve the visual height
+        int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
+        applyWaveformPixmapWithBackdrop(targetWpx, targetHpx);
+    }
     update();
 
     // Write rendered canonical image to cache for future loads
@@ -403,6 +401,22 @@ void SoundContainer::contextMenuEvent(QContextMenuEvent* event)
             // request clear via signal so MainWindow can record undo/redo
             emit clearRequested(this);
         });
+        // Allow the user to choose a backdrop color for transparent waveform images
+        menu.addAction(tr("Set Color"), this, [this]() {
+            QColor initial = m_backdropColor.isValid() ? m_backdropColor : QColor(Qt::white);
+            QColor c = QColorDialog::getColor(initial, this, tr("Select Waveform Backdrop Color"));
+            if (c.isValid()) {
+                m_backdropColor = c;
+                // Re-apply current pixmap with new backdrop if present
+                if (m_hasWavePixmap && !m_wavePixmap.isNull()) {
+                    QSize labelSize = availableDisplaySize();
+                    qreal widgetDpr = devicePixelRatioF();
+                    int targetWpx = static_cast<int>(std::ceil(labelSize.width() * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
+                    int targetHpx = static_cast<int>(std::ceil(labelSize.height() * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
+                    applyWaveformPixmapWithBackdrop(targetWpx, targetHpx);
+                }
+            }
+        });
     } else {
         QAction* a = menu.addAction(tr("Play Sound"));
         a->setEnabled(false);
@@ -481,20 +495,16 @@ void SoundContainer::setFile(const QString& path)
         if (!cached.isNull()) {
             m_wavePixmap = QPixmap::fromImage(cached);
             m_hasWavePixmap = true;
-                {
-                    // Force cached pixmap to the container's logical height and width.
-                    QSize labelSize = availableDisplaySize();
-                    int containerW = labelSize.width();
-                    int containerH = labelSize.height();
-                    qreal widgetDpr = devicePixelRatioF();
-                    int targetWpx = static_cast<int>(std::floor(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
-                    int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
-                    Q_UNUSED(widgetDpr); Q_UNUSED(targetWpx); Q_UNUSED(targetHpx); Q_UNUSED(containerW); Q_UNUSED(containerH);
-                    QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-                    scaled.setDevicePixelRatio(widgetDpr);
-                    m_waveform->setText(QString());
-                    m_waveform->setPixmap(scaled);
-                }
+            {
+                // Force cached pixmap to the container's logical height and width.
+                QSize labelSize = availableDisplaySize();
+                int containerW = labelSize.width();
+                int containerH = labelSize.height();
+                qreal widgetDpr = devicePixelRatioF();
+                int targetWpx = static_cast<int>(std::floor(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
+                int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
+                applyWaveformPixmapWithBackdrop(targetWpx, targetHpx);
+            }
             update();
             double duration = meta.contains("duration") ? meta.value("duration").toDouble() : 0.0;
             int sr = meta.contains("samplerate") ? meta.value("samplerate").toInt() : samplerate;
@@ -564,10 +574,7 @@ void SoundContainer::resizeEvent(QResizeEvent* event)
             qreal widgetDpr = devicePixelRatioF();
             int targetWpx = static_cast<int>(std::floor(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
             int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
-            QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-            scaled.setDevicePixelRatio(widgetDpr);
-            m_waveform->setText(QString());
-            m_waveform->setPixmap(scaled);
+            applyWaveformPixmapWithBackdrop(targetWpx, targetHpx);
             update();
             return;
         }
@@ -607,10 +614,7 @@ void SoundContainer::resizeEvent(QResizeEvent* event)
                     int targetWpx = static_cast<int>(std::ceil(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
                     int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
                     Q_UNUSED(widgetDpr); Q_UNUSED(targetWpx); Q_UNUSED(targetHpx); Q_UNUSED(containerW); Q_UNUSED(containerH);
-                    QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-                    scaled.setDevicePixelRatio(widgetDpr);
-                    m_waveform->setText(QString());
-                    m_waveform->setPixmap(scaled);
+                    applyWaveformPixmapWithBackdrop(targetWpx, targetHpx);
                 }
                 update();
                 double duration = meta.contains("duration") ? meta.value("duration").toDouble() : 0.0;
@@ -661,10 +665,7 @@ void SoundContainer::setPlayheadPosition(float pos)
                     int targetWpx = static_cast<int>(std::ceil(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
                     int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
                     Q_UNUSED(widgetDpr); Q_UNUSED(targetWpx); Q_UNUSED(targetHpx); Q_UNUSED(containerW); Q_UNUSED(containerH);
-                    QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-                    scaled.setDevicePixelRatio(widgetDpr);
-                    m_waveform->setText(QString());
-                    m_waveform->setPixmap(scaled);
+                    applyWaveformPixmapWithBackdrop(targetWpx, targetHpx);
                 }
     } else {
         m_playing = true;
@@ -736,6 +737,54 @@ void SoundContainer::dropEvent(QDropEvent* event)
     event->ignore();
 }
 
+void SoundContainer::applyWaveformPixmapWithBackdrop(int targetWpx, int targetHpx)
+{
+    if (m_wavePixmap.isNull()) return;
+    qreal widgetDpr = devicePixelRatioF();
+    // Scale the canonical pixmap to the target logical pixel dimensions
+    QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    scaled.setDevicePixelRatio(widgetDpr);
+
+    // If there's no valid backdrop color, just set the scaled pixmap
+    if (!m_backdropColor.isValid()) {
+        m_waveform->setText(QString());
+        m_waveform->setPixmap(scaled);
+        return;
+    }
+
+    // Compose backdrop + waveform into an image of exact pixel dimensions
+    QImage out(targetWpx, targetHpx, QImage::Format_ARGB32);
+    out.setDevicePixelRatio(widgetDpr);
+    out.fill(m_backdropColor);
+    QPainter p(&out);
+    p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    p.drawPixmap(0, 0, scaled);
+    p.end();
+
+    QPixmap outPm = QPixmap::fromImage(out);
+    outPm.setDevicePixelRatio(widgetDpr);
+    m_waveform->setText(QString());
+    m_waveform->setPixmap(outPm);
+}
+
+void SoundContainer::setBackdropColor(const QColor& c)
+{
+    m_backdropColor = c;
+    // reapply to current pixmap if present
+    if (m_hasWavePixmap && !m_wavePixmap.isNull()) {
+        QSize labelSize = availableDisplaySize();
+        qreal widgetDpr = devicePixelRatioF();
+        int targetWpx = static_cast<int>(std::ceil(labelSize.width() * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
+        int targetHpx = static_cast<int>(std::ceil(labelSize.height() * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
+        applyWaveformPixmapWithBackdrop(targetWpx, targetHpx);
+    }
+}
+
+QColor SoundContainer::backdropColor() const
+{
+    return m_backdropColor;
+}
+
 void SoundContainer::resetToDefaultAppearance()
 {
     // Clear waveform display
@@ -744,6 +793,7 @@ void SoundContainer::resetToDefaultAppearance()
     // Clear waveform text area
     m_waveform->setText(QString());
     m_waveform->setToolTip(QString());
+    // Keep previously selected backdrop color (user preference). Do not clear.
     // Ensure waveform label alignment/margins match constructor defaults
     m_waveform->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     m_waveform->setContentsMargins(0,0,0,0);
