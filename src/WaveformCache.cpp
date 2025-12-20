@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QStandardPaths>
 #include <QCryptographicHash>
+#include <QDebug>
 
 QString WaveformCache::cacheDirPath() {
     // Allow override for tests or custom locations
@@ -89,6 +90,35 @@ QImage WaveformCache::load(const QString& key, QJsonObject* outMetadata) {
     QJsonDocument doc = QJsonDocument::fromJson(mbytes);
     if (!doc.isObject()) return QImage();
     QJsonObject obj = doc.object();
+
+    // Basic validation: ensure metadata contains the fields required to recompute the cache key
+    const QStringList required = {"path", "size", "mtime", "channels", "samplerate", "dpr", "pixelWidth"};
+    for (const QString& k : required) {
+        if (!obj.contains(k)) {
+            // corrupt metadata: remove both files and fail
+            QFile::remove(imgPath);
+            QFile::remove(metaPath);
+            return QImage();
+        }
+    }
+
+    // Recompute key from metadata and ensure it matches the provided key; if not, treat as mismatch and remove files.
+    QString path = obj.value("path").toString();
+    qint64 size = static_cast<qint64>(obj.value("size").toDouble());
+    qint64 mtime = static_cast<qint64>(obj.value("mtime").toDouble());
+    int channels = obj.value("channels").toInt();
+    int samplerate = obj.value("samplerate").toInt();
+    float dpr = static_cast<float>(obj.value("dpr").toDouble());
+    int pixelWidth = obj.value("pixelWidth").toInt();
+
+    QString recomputed = makeKey(path, size, mtime, channels, samplerate, dpr, pixelWidth);
+    if (recomputed != key) {
+        qWarning() << "WaveformCache: key mismatch" << key << "!=" << recomputed << "-- removing";
+        qWarning() << "meta:" << obj;
+        QFile::remove(imgPath);
+        QFile::remove(metaPath);
+        return QImage();
+    }
 
     // Provide metadata to caller
     if (outMetadata) *outMetadata = obj;

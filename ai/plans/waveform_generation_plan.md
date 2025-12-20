@@ -42,11 +42,11 @@ For human Testing:
 - Run pyramid unit tests. Expect deterministic level values and consistent samplesPerBucket metadata.
 
 ## Phase 4 — Bitmap renderer & cache format
-- [ ] Define cache key and metadata JSON: path + size + mtime + sampleRate + channels + totalSamples + dpr + pixelWidth.
-- [ ] Render a level to a DPR-aware `QImage` using min/max arrays: map sample amplitude -> image Y. Keep rendering deterministic and fast.
-- [ ] Implement atomic cache write: write to temp file, fsync, rename, write metadata JSON.
-- [ ] On load: validate metadata, reject and delete on mismatch.
-- [ ] Unit test: render a short synthetic level and compare pixel values at key columns.
+ - [x] Define cache key and metadata JSON: path + size + mtime + sampleRate + channels + totalSamples + dpr + pixelWidth.
+ - [x] Render a level to a DPR-aware `QImage` using min/max arrays: map sample amplitude -> image Y. Keep rendering deterministic and fast.
+ - [x] Implement atomic cache write: write to temp file, fsync, rename, write metadata JSON.
+ - [x] On load: validate metadata, reject and delete on mismatch.
+ - [x] Unit test: render a short synthetic level and compare pixel values at key columns.
 
 For human Testing:
 - Build and run a short UI flow to generate cache for a test file. Expect a cache file + metadata in `QStandardPaths::CacheLocation/libresoundboard/waveforms` and quick load on subsequent runs.
