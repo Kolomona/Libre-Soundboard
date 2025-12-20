@@ -21,6 +21,8 @@ add_library(libresoundboard_core STATIC
     WaveformRenderer.h
     WaveformCache.cpp
     WaveformCache.h
+    DebugLog.cpp
+    DebugLog.h
     AudioFile.cpp
     AudioFile.h
     SingleInstance.cpp

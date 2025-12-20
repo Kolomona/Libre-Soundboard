@@ -28,3 +28,9 @@ add_executable(tests_waveform_worker
 )
 target_link_libraries(tests_waveform_worker PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Core)
 add_test(NAME waveform_worker_tests COMMAND tests_waveform_worker)
+
+add_executable(tests_soundcontainer_cache_flow
+    ../tests/test_soundcontainer_cache_flow.cpp
+)
+target_link_libraries(tests_soundcontainer_cache_flow PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Widgets Qt6::Gui Qt6::Core)
+add_test(NAME soundcontainer_cache_flow_tests COMMAND tests_soundcontainer_cache_flow)

@@ -19,8 +19,19 @@ QString WaveformCache::cacheDirPath() {
     // Prefer platform cache location so files survive reboots.
     QString base = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
     if (base.isEmpty()) base = QDir::homePath() + "/.cache";
+    // Normalize: collapse any number of trailing 'libresoundboard' segments
+    // into exactly one, then append 'waveforms'. This guarantees the final
+    // path is .../.cache/libresoundboard/waveforms regardless of odd
+    // platform-returned base values.
     QDir d(base);
-    QString p = d.filePath("libresoundboard/waveforms");
+    // Move up while the current directory name is 'libresoundboard' so we
+    // remove repeated trailing segments like /.../libresoundboard/libresoundboard
+    while (d.dirName() == "libresoundboard") {
+        if (!d.cdUp()) break;
+    }
+    // Now ensure exactly one 'libresoundboard' segment
+    QString finalBase = QDir(d.absolutePath()).filePath("libresoundboard");
+    QString p = QDir(finalBase).filePath("waveforms");
     QDir pdir(p);
     if (!pdir.exists()) pdir.mkpath(".");
     return p;
@@ -44,6 +55,7 @@ QString WaveformCache::makeKey(const QString& path, qint64 size, qint64 mtime, i
 
 bool WaveformCache::write(const QString& key, const QImage& image, const QJsonObject& metadata) {
     QString dir = cacheDirPath();
+    qDebug() << "WaveformCache::write called key=" << key << "dir=" << dir;
     QDir d(dir);
     QString imgPath = d.filePath(key + ".png");
     QString metaPath = d.filePath(key + ".json");
@@ -54,6 +66,7 @@ bool WaveformCache::write(const QString& key, const QImage& image, const QJsonOb
     QFile::remove(imgPath);
     if (!QFile::rename(tmpImg, imgPath)) {
         QFile::remove(tmpImg);
+        qWarning() << "WaveformCache::write failed to rename img tmp" << tmpImg << "->" << imgPath;
         return false;
     }
 
@@ -68,8 +81,11 @@ bool WaveformCache::write(const QString& key, const QImage& image, const QJsonOb
     QFile::remove(metaPath);
     if (!QFile::rename(tmpMeta, metaPath)) {
         QFile::remove(tmpMeta);
+        qWarning() << "WaveformCache::write failed to rename meta tmp" << tmpMeta << "->" << metaPath;
         return false;
     }
+
+    qDebug() << "WaveformCache::write success" << imgPath << metaPath;
 
     return true;
 }
@@ -125,5 +141,99 @@ QImage WaveformCache::load(const QString& key, QJsonObject* outMetadata) {
 
     QImage img;
     if (!img.load(imgPath)) return QImage();
+    // Ensure the loaded image carries the DPR recorded in metadata so
+    // callers (which convert to QPixmap) can display it at the expected
+    // device scale without unexpected pixel rounding/cropping.
+    if (dpr <= 0.0f) dpr = 1.0f;
+    img.setDevicePixelRatio(dpr);
+    return img;
+}
+
+QImage WaveformCache::loadBest(const QString& path, qint64 size, qint64 mtime, int channels, int samplerate, float dpr, int pixelWidth, QJsonObject* outMetadata) {
+    // Try exact match first
+    QString exactKey = makeKey(path, size, mtime, channels, samplerate, dpr, pixelWidth);
+    QImage exact = load(exactKey, outMetadata);
+    if (!exact.isNull()) return exact;
+
+    // Scan cache dir for metadata JSON files and find candidates that match the
+    // identifying fields. Prefer candidate with pixelWidth >= requested and
+    // with minimal pixelWidth; otherwise pick the largest available smaller one.
+    QString dir = cacheDirPath();
+    QDir d(dir);
+    if (!d.exists()) return QImage();
+    QStringList jsonFiles = d.entryList(QStringList() << "*.json", QDir::Files, QDir::Name);
+
+    int bestGreater = INT_MAX;
+    int bestSmaller = -1;
+    QString bestKeyGreater;
+    QString bestKeySmaller;
+    QJsonObject bestMeta;
+
+    for (const QString& jf : jsonFiles) {
+        QString metaPath = d.filePath(jf);
+        QFile fmeta(metaPath);
+        if (!fmeta.open(QIODevice::ReadOnly)) continue;
+        QByteArray mbytes = fmeta.readAll();
+        fmeta.close();
+        QJsonDocument doc = QJsonDocument::fromJson(mbytes);
+        if (!doc.isObject()) continue;
+        QJsonObject obj = doc.object();
+        // match identity fields
+        if (obj.value("path").toString() != path) continue;
+        if (static_cast<qint64>(obj.value("size").toDouble()) != size) continue;
+        if (static_cast<qint64>(obj.value("mtime").toDouble()) != mtime) continue;
+        if (obj.value("channels").toInt() != channels) continue;
+        if (obj.value("samplerate").toInt() != samplerate) continue;
+        if (static_cast<int>(obj.value("dpr").toDouble()) != static_cast<int>(dpr)) continue;
+        int pw = obj.value("pixelWidth").toInt();
+        // compute key for this metadata file (filename without .json)
+        QString base = jf;
+        if (base.endsWith(".json")) base.chop(5);
+        QString candidateKey = base;
+        if (pw >= pixelWidth) {
+            if (pw < bestGreater) {
+                bestGreater = pw;
+                bestKeyGreater = candidateKey;
+                bestMeta = obj;
+            }
+        } else {
+            if (pw > bestSmaller) {
+                bestSmaller = pw;
+                bestKeySmaller = candidateKey;
+                bestMeta = obj;
+            }
+        }
+    }
+
+    QString chosenKey;
+    QJsonObject chosenMeta;
+    if (!bestKeyGreater.isEmpty()) {
+        chosenKey = bestKeyGreater;
+        chosenMeta = bestMeta;
+    } else if (!bestKeySmaller.isEmpty()) {
+        chosenKey = bestKeySmaller;
+        chosenMeta = bestMeta;
+    } else {
+        return QImage();
+    }
+
+    QImage img;
+    QString imgPath = d.filePath(chosenKey + ".png");
+    if (!img.load(imgPath)) return QImage();
+
+    // If the image pixelWidth differs, scale it to requested size (downscale preferred)
+    int availablePW = chosenMeta.value("pixelWidth").toInt();
+    if (availablePW != pixelWidth) {
+        // Scale image to the requested pixelWidth taking DPR into account.
+        float chosenDpr = static_cast<float>(chosenMeta.value("dpr").toDouble());
+        if (chosenDpr <= 0.0f) chosenDpr = 1.0f;
+        int targetWpx = static_cast<int>(std::ceil(static_cast<float>(pixelWidth) * chosenDpr));
+        int targetHpx = 1;
+        if (img.width() > 0) targetHpx = static_cast<int>(std::ceil(static_cast<float>(img.height()) * (static_cast<float>(targetWpx) / static_cast<float>(img.width()))));
+        img = img.scaled(targetWpx, targetHpx, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        img.setDevicePixelRatio(chosenDpr);
+    }
+
+    if (outMetadata) *outMetadata = chosenMeta;
     return img;
 }

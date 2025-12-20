@@ -49,7 +49,7 @@ TEST_CASE("render level to image and cache", "[waveform][renderer][cache]") {
         if (mf.open(QIODevice::ReadOnly)) {
             QByteArray mb = mf.readAll();
             mf.close();
-            INFO("metadata file: " + QString::fromUtf8(mb));
+            INFO("metadata file: " << QString::fromUtf8(mb).toStdString());
         }
     }
 
@@ -78,9 +78,6 @@ TEST_CASE("render level to image and cache", "[waveform][renderer][cache]") {
     REQUIRE(pe == le);
 
     // Now simulate metadata mismatch -> cache should be rejected and files removed
-    QString dir = WaveformCache::cacheDirPath();
-    QDir d(dir);
-    QString metaPath = d.filePath(key + ".json");
     REQUIRE(QFile::exists(metaPath));
 
     // Load and mutate metadata

@@ -52,10 +52,13 @@ For human Testing:
 - Build and run a short UI flow to generate cache for a test file. Expect a cache file + metadata in `QStandardPaths::CacheLocation/libresoundboard/waveforms` and quick load on subsequent runs.
 
 ## Phase 5 — Worker API integration with `SoundContainer`
-- [ ] On `setFile()` enqueue a `WaveformJob` with current widget pixel width and DPR, return placeholder immediately.
-- [ ] On `resizeEvent` or DPR change, enqueue new job (cancel outstanding for same `requestId`).
-- [ ] On completion: set `m_wavePixmap`, set `m_hasWavePixmap=true`, emit ready signal and register container with Playhead manager (phase 6).
+- [x] On `setFile()` enqueue a `WaveformJob` with current widget pixel width and DPR, return placeholder immediately.
+- [x] On `resizeEvent` or DPR change, enqueue new job (cancel outstanding for same `requestId`).
+- [x] On completion: set `m_wavePixmap`, set `m_hasWavePixmap=true`, emit ready signal and register container with Playhead manager (phase 6).
 - [ ] Unit test: simulate job completion -> widget receives pixmap and tooltip/filename behavior persists.
+
+ - [x] Unit test: simulate job completion -> widget receives pixmap and tooltip/filename behavior persists.  
+	 - Test implemented in `tests/test_soundcontainer_phase5.cpp` using `SoundContainer::applyWaveformResultForTest`.
 
 For human Testing:
 - Drag a small audio file into a slot. Expect placeholder text then a waveform thumbnail, no UI freeze. Resize the slot and expect a re-request and new thumbnail.

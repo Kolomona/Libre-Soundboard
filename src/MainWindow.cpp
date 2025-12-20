@@ -113,11 +113,29 @@ MainWindow::MainWindow(QWidget* parent)
         QWidget* tab = new QWidget(m_tabs);
         auto* layout = new QGridLayout(tab);
         layout->setSpacing(8);
+        // Ensure columns and rows stretch equally so each SoundContainer
+        // receives an equal share of available width/height when the
+        // main window is resized. Also allow columns to shrink to zero
+        // minimum so the grid can fit smaller displays.
+        for (int cc = 0; cc < cols; ++cc) {
+            layout->setColumnStretch(cc, 1);
+            layout->setColumnMinimumWidth(cc, 0);
+        }
+        for (int rr = 0; rr < rows; ++rr) {
+            layout->setRowStretch(rr, 1);
+            layout->setRowMinimumHeight(rr, 0);
+        }
 
         m_containers[t].reserve(rows * cols);
         for (int r = 0; r < rows; ++r) {
             for (int c = 0; c < cols; ++c) {
                 auto* sc = new SoundContainer(tab);
+                // Let each SoundContainer expand so the grid fills the window
+                // and keeps equal widths across columns. Also clear any
+                // container minimum so columns can shrink evenly to fit.
+                sc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+                sc->setMinimumWidth(0);
+                sc->setMinimumHeight(0);
                 layout->addWidget(sc, r, c);
                 m_containers[t].push_back(sc);
                 connect(sc, &SoundContainer::playRequested, this, &MainWindow::onPlayRequested);
@@ -207,6 +225,10 @@ MainWindow::MainWindow(QWidget* parent)
     writeDebugLog(QString("MainWindow constructed pid=%1").arg(getpid()));
     setWindowTitle(tr("LibreSoundboard"));
     resize(900, 600);
+    // Allow shrinking down to a usable minimum width while keeping layouts flexible.
+    // This ensures users can resize the app down to ~500px when desired.
+    if (centralWidget()) centralWidget()->setMinimumWidth(0);
+    setMinimumWidth(500);
 }
 
 void MainWindow::onTabMoved(int from, int to)
@@ -358,6 +380,34 @@ void MainWindow::syncContainersWithUi()
             ptrs << QString::number(reinterpret_cast<uintptr_t>(sc));
         }
         Q_UNUSED(ptrs);
+    }
+}
+
+void MainWindow::resizeEvent(QResizeEvent* event)
+{
+    QMainWindow::resizeEvent(event);
+    // Ensure active tab's SoundContainers are set to equal widths so the
+    // grid visually fills the available width exactly.
+    int idx = m_tabs ? m_tabs->currentIndex() : -1;
+    if (idx < 0 || idx >= (int)m_containers.size()) return;
+    QWidget* page = m_tabs->widget(idx);
+    if (!page) return;
+    QLayout* l = page->layout();
+    if (!l) return;
+    const int cols = 8; // keep in sync with creation code
+    int spacing = l->spacing();
+    QMargins mg = l->contentsMargins();
+    int avail = page->width() - mg.left() - mg.right();
+    if (avail <= 0) return;
+    // Let the layout stretching handle equal widths. Clear any per-container
+    // max/min constraints so the window can shrink freely; layouts will
+    // distribute available width equally because we set equal column stretches.
+    for (int i = 0; i < (int)m_containers[idx].size(); ++i) {
+        SoundContainer* sc = m_containers[idx][i];
+        if (!sc) continue;
+        sc->setMinimumWidth(0);
+        sc->setMaximumWidth(QWIDGETSIZE_MAX);
+        sc->updateGeometry();
     }
 }
 

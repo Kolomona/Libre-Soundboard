@@ -4,9 +4,16 @@
 #include "MainWindow.h"
 #include "SingleInstance.h"
 #include <QDebug>
+#include "DebugLog.h"
 
 int main(int argc, char** argv)
 {
+    // If the env var LIBRE_WAVEFORM_DEBUG_LOG_PATH is set, enable file logging (opt-in)
+    const char* dbgPath = getenv("LIBRE_WAVEFORM_DEBUG_LOG_PATH");
+    if (dbgPath && dbgPath[0] != '\0') {
+        DebugLog::install(QString::fromUtf8(dbgPath));
+    }
+
     QApplication app(argc, argv);
     // Prefer SVG, fallback to PNG or ICO
     QIcon icon;

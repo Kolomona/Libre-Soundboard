@@ -24,6 +24,10 @@ public:
     explicit SoundContainer(QWidget* parent = nullptr);
     ~SoundContainer() override = default;
 
+    // Test helper: apply a precomputed WaveformResult as if a job completed.
+    // This avoids needing to run the background worker in unit tests.
+    void applyWaveformResultForTest(const struct WaveformResult& result);
+
     void setFile(const QString& path);
     QString file() const { return m_filePath; }
     void setVolume(float v);
@@ -61,6 +65,10 @@ private slots:
     void onWaveformError(const WaveformJob& job, const QString& err);
 
 private:
+    // Compute the logical display size (width,height) used for waveform rendering
+    // and scaling. This considers layout margins so the code does not depend on
+    // the internal label widget being present in the future.
+    QSize availableDisplaySize() const;
     QPushButton* m_playBtn;
     QLabel* m_filenameLabel;
     QLabel* m_waveform;

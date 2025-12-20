@@ -25,6 +25,34 @@
 #include <QPaintEvent>
 #include "WaveformWorker.h"
 #include "PlayheadManager.h"
+#include "WaveformCache.h"
+#include "WaveformRenderer.h"
+#include <sndfile.h>
+#include <cmath>
+
+QSize SoundContainer::availableDisplaySize() const
+{
+    // Start with the container's contents rect width (available logical pixels)
+    int availW = contentsRect().width();
+    int availH = 0;
+    // If we have a waveform widget, use its logical height; otherwise infer a reasonable height
+    if (m_waveform && m_waveform->height() > 0) {
+        availH = m_waveform->height();
+    } else {
+        availH = contentsRect().height() / 3;
+    }
+
+    // Account for the layout's contents margins which may reduce available width
+    QLayout* l = layout();
+    if (l) {
+        QMargins m = l->contentsMargins();
+        availW -= (m.left() + m.right());
+    }
+
+    if (availW < 1) availW = 1;
+    if (availH < 1) availH = 1;
+    return QSize(availW, availH);
+}
 
 namespace {
 static QPixmap makeDragCursorPixmap(const QString& text)
@@ -66,8 +94,14 @@ SoundContainer::SoundContainer(QWidget* parent)
     layout->addWidget(m_filenameLabel);
 
     m_waveform = new QLabel(this);
-    m_waveform->setMinimumSize(160, 80);
-    m_waveform->setAlignment(Qt::AlignCenter);
+    // Reduce the minimum size to allow the overall window to be shrunk
+    // (previously 160x80 which prevented fitting on some displays).
+    m_waveform->setMinimumSize(120, 60);
+    // Align waveform to left, not centered, and remove internal label margins so
+    // the image sits flush against the container left edge.
+    m_waveform->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_waveform->setContentsMargins(0,0,0,0);
+    m_waveform->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     m_playBtn = new QPushButton(tr("Play"), this);
     layout->addWidget(m_waveform);
@@ -131,61 +165,78 @@ SoundContainer::SoundContainer(QWidget* parent)
 // Worker signal handlers
 void SoundContainer::onWaveformReady(const WaveformJob& job, const WaveformResult& result)
 {
+    qDebug() << "onWaveformReady called job.id=" << job.id << "pending=" << m_pendingJobId << "path=" << job.path << "res.samples=" << result.min.size();
     if (job.id != m_pendingJobId) return;
-    // build a simple pixmap preview (fallback renderer for phase 4)
-    QSize labelSize = m_waveform->size();
-    if (labelSize.width() <= 0 || labelSize.height() <= 0) return;
-    qreal dpr = job.dpr <= 0.0 ? 1.0 : job.dpr;
-    QImage img(labelSize.width() * dpr, labelSize.height() * dpr, QImage::Format_ARGB32_Premultiplied);
-    img.setDevicePixelRatio(dpr);
-    img.fill(Qt::transparent);
-    QPainter p(&img);
-    p.setRenderHint(QPainter::Antialiasing);
-    // background
-    p.fillRect(img.rect(), QColor(40, 40, 40));
-    // draw a naive representation: if we have min/max arrays, draw line strips
-    if (!result.min.isEmpty() && result.min.size() == result.max.size()) {
-        int n = result.min.size();
-        int w = img.width() / dpr;
-        int h = img.height() / dpr;
-        QPen pen(QColor(180, 180, 220));
-        pen.setWidthF(1.0);
-        p.setPen(pen);
-        for (int i = 0; i < n; ++i) {
-            float mn = result.min[i];
-            float mx = result.max[i];
-            int x = static_cast<int>((double)i / (double)n * w);
-            int y1 = static_cast<int>((0.5 - mn * 0.5) * h);
-            int y2 = static_cast<int>((0.5 - mx * 0.5) * h);
-            p.drawLine(x, y1, x, y2);
-        }
-    } else {
-        // no waveform data: draw a placeholder banded graphic to indicate rendering done
-        int w = img.width() / dpr;
-        int h = img.height() / dpr;
-        QPen pen(QColor(100, 160, 200));
-        pen.setWidthF(1.0);
-        p.setPen(pen);
-        for (int x = 0; x < w; x += 4) {
-            int hh = (x % 12 == 0) ? (h * 0.6) : (h * 0.3);
-            p.drawLine(x, (h - hh) / 2, x, (h + hh) / 2);
-        }
-    }
-    p.end();
+
+    // Use the waveform widget's logical size as the authoritative width/height
+    // for rendering and scaling. This keeps behavior stable and matches the
+    // QLabel that will display the QPixmap.
+            QSize labelSize = availableDisplaySize();
+            if (labelSize.width() <= 0 || labelSize.height() <= 0) return;
+
+    // Render canonical image using the job's pixelWidth and dpr so cache files match the
+    // worker's intended resolution (avoids writing images sized to the widget).
+    float fdpr = static_cast<float>(job.dpr <= 0.0 ? 1.0 : job.dpr);
+    int pixelWidth = job.pixelWidth > 0 ? job.pixelWidth : labelSize.width();
+    int heightCss = labelSize.height();
+
+    WaveformLevel level;
+    level.min = result.min;
+    level.max = result.max;
+
+    QImage img = Waveform::renderLevelToImage(level, pixelWidth, fdpr, heightCss);
 
     m_wavePixmap = QPixmap::fromImage(img);
     m_hasWavePixmap = true;
-    m_waveform->setPixmap(m_wavePixmap.scaled(m_waveform->size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
+        {
+            // Force the pixmap to the container's logical height (ignore aspect ratio)
+            QSize labelSize = availableDisplaySize();
+            int containerW = labelSize.width();
+            int containerH = labelSize.height();
+            qreal widgetDpr = devicePixelRatioF();
+            // Use floor for width so the logical pixmap width never exceeds the container
+            int targetWpx = static_cast<int>(std::floor(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
+            // Use ceil for height to ensure we preserve the visual height
+            int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
+            qDebug() << "scale->widget labelSize=" << labelSize << "widgetDpr=" << widgetDpr << "srcPixmap=" << m_wavePixmap.size() << "srcDpr=" << m_wavePixmap.devicePixelRatio() << "targetPx=" << QSize(targetWpx, targetHpx);
+            QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            scaled.setDevicePixelRatio(widgetDpr);
+            m_waveform->setText(QString());
+            m_waveform->setPixmap(scaled);
+        }
     update();
 
-    // Register this container with the playhead manager so it can receive updates
+    // Write rendered canonical image to cache for future loads
     if (!job.path.isEmpty()) {
+        QFileInfo fi(job.path);
+        qint64 size = fi.size();
+        qint64 mtime = fi.lastModified().toSecsSinceEpoch();
+        int channels = result.channels;
+        int samplerate = result.sampleRate;
+        QString key = WaveformCache::makeKey(job.path, size, mtime, channels, samplerate, fdpr, pixelWidth);
+        QJsonObject meta;
+        meta["path"] = job.path;
+        meta["size"] = static_cast<double>(size);
+        meta["mtime"] = static_cast<double>(mtime);
+        meta["channels"] = channels;
+        meta["samplerate"] = samplerate;
+        meta["dpr"] = fdpr;
+        meta["pixelWidth"] = pixelWidth;
+        meta["width"] = img.width();
+        meta["height"] = img.height();
+        meta["duration"] = result.duration;
+        QString cacheDir = WaveformCache::cacheDirPath();
+        qDebug() << "WaveformCache::write key=" << key << "dir=" << cacheDir;
+        WaveformCache::write(key, img, meta);
+
+        // Register this container with the playhead manager so it can receive updates
         PlayheadManager::instance()->registerContainer(job.path, this, result.duration, result.sampleRate);
     }
 }
 
 void SoundContainer::onWaveformError(const WaveformJob& job, const QString& err)
 {
+    qDebug() << "onWaveformError job.id=" << job.id << "err=" << err;
     Q_UNUSED(job);
     Q_UNUSED(err);
     // For now, just keep placeholder text; ensure we don't mistakenly show previous pixmap
@@ -193,6 +244,19 @@ void SoundContainer::onWaveformError(const WaveformJob& job, const QString& err)
     m_waveform->setPixmap(QPixmap());
     m_filenameLabel->setText(m_filePath.isEmpty() ? tr("Drop audio file here") : QFileInfo(m_filePath).fileName());
     update();
+}
+
+void SoundContainer::applyWaveformResultForTest(const WaveformResult& result)
+{
+    // Construct a job that matches current pending id/path and call the same
+    // rendering path as a real job completion. This mirrors onWaveformReady
+    // but is safe to call from unit tests (no worker thread involvement).
+    WaveformJob job;
+    job.id = m_pendingJobId;
+    job.path = m_filePath;
+    job.dpr = devicePixelRatioF();
+    // Call the same renderer used in onWaveformReady
+    onWaveformReady(job, result);
 }
 
 
@@ -389,6 +453,58 @@ void SoundContainer::setFile(const QString& path)
     // enqueue a render for current label width and DPR
     int px = qMax(1, m_waveform->width());
     qreal dpr = devicePixelRatioF();
+
+    // Try to load cached rendered image first. We need file size, mtime and audio metadata (channels/samplerate)
+    qint64 size = fi.size();
+    qint64 mtime = fi.lastModified().toSecsSinceEpoch();
+    int channels = 0;
+    int samplerate = 0;
+    // Try libsndfile to probe header quickly
+    QByteArray ba = m_filePath.toLocal8Bit();
+    const char* cpath = ba.constData();
+    SF_INFO sfinfo;
+    memset(&sfinfo, 0, sizeof(sfinfo));
+    SNDFILE* snd = sf_open(cpath, SFM_READ, &sfinfo);
+    if (snd) {
+        samplerate = sfinfo.samplerate;
+        channels = sfinfo.channels;
+        sf_close(snd);
+    }
+
+    QString key;
+    const int preferredCachePx = 500;
+    if (channels > 0 && samplerate > 0) {
+        QJsonObject meta;
+        // Try to load the canonical large cache (preferredCachePx). If present,
+        // use it (scaled) and avoid enqueuing work for the current widget size.
+        QImage cached = WaveformCache::load(WaveformCache::makeKey(m_filePath, size, mtime, channels, samplerate, static_cast<float>(dpr), preferredCachePx), &meta);
+        if (!cached.isNull()) {
+            m_wavePixmap = QPixmap::fromImage(cached);
+            m_hasWavePixmap = true;
+                {
+                    // Force cached pixmap to the container's logical height and width.
+                    QSize labelSize = availableDisplaySize();
+                    int containerW = labelSize.width();
+                    int containerH = labelSize.height();
+                    qreal widgetDpr = devicePixelRatioF();
+                    int targetWpx = static_cast<int>(std::floor(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
+                    int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
+                    qDebug() << "resize->cache labelSize=" << labelSize << "widgetDpr=" << widgetDpr << "srcPixmap=" << m_wavePixmap.size() << "srcDpr=" << m_wavePixmap.devicePixelRatio() << "targetPx=" << QSize(targetWpx, targetHpx);
+                    QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+                    scaled.setDevicePixelRatio(widgetDpr);
+                    m_waveform->setText(QString());
+                    m_waveform->setPixmap(scaled);
+                }
+            update();
+            double duration = meta.contains("duration") ? meta.value("duration").toDouble() : 0.0;
+            int sr = meta.contains("samplerate") ? meta.value("samplerate").toInt() : samplerate;
+            if (!m_filePath.isEmpty()) {
+                PlayheadManager::instance()->registerContainer(m_filePath, this, duration, sr);
+            }
+            return;
+        }
+    }
+
     // cancel previous job
     if (!m_pendingJobId.isNull()) {
         m_waveWorker->cancelJob(m_pendingJobId);
@@ -396,7 +512,8 @@ void SoundContainer::setFile(const QString& path)
     }
     m_hasWavePixmap = false;
     m_waveform->setText(tr("Rendering..."));
-    m_pendingJobId = m_waveWorker->enqueueJob(m_filePath, px, dpr);
+    // Enqueue a job to generate the canonical large cache (preferredCachePx)
+    m_pendingJobId = m_waveWorker->enqueueJob(m_filePath, preferredCachePx, dpr);
 }
 
 void SoundContainer::setVolume(float v)
@@ -434,15 +551,79 @@ void SoundContainer::resizeEvent(QResizeEvent* event)
     // when resized, request a new waveform render if we have a file
     if (!m_filePath.isEmpty()) {
         if (!m_waveWorker) return;
-        int px = qMax(1, m_waveform->width());
+        // Prefer a canonical large cache image and scale it for any widget size
+        const int preferredCachePx = 500;
         qreal dpr = devicePixelRatioF();
-        if (!m_pendingJobId.isNull()) {
-            m_waveWorker->cancelJob(m_pendingJobId);
-            m_pendingJobId = QUuid();
+
+        // If we already have a pixmap (from cache or prior render), just rescale
+        if (m_hasWavePixmap) {
+            // Force existing pixmap to the container's logical height and width.
+            QSize labelSize = availableDisplaySize();
+            int containerW = labelSize.width();
+            int containerH = labelSize.height();
+            qreal widgetDpr = devicePixelRatioF();
+            int targetWpx = static_cast<int>(std::floor(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
+            int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
+            QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            scaled.setDevicePixelRatio(widgetDpr);
+            m_waveform->setText(QString());
+            m_waveform->setPixmap(scaled);
+            update();
+            return;
         }
+
+        // If a generation job is already pending, don't enqueue again
+        if (!m_pendingJobId.isNull()) return;
+
+        // Try to pre-load the canonical cache; if found, use it
+        QFileInfo fi(m_filePath);
+        qint64 size = fi.size();
+        qint64 mtime = fi.lastModified().toSecsSinceEpoch();
+        int channels = 0;
+        int samplerate = 0;
+        QByteArray ba = m_filePath.toLocal8Bit();
+        const char* cpath = ba.constData();
+        SF_INFO sfinfo;
+        memset(&sfinfo, 0, sizeof(sfinfo));
+        SNDFILE* snd = sf_open(cpath, SFM_READ, &sfinfo);
+        if (snd) {
+            samplerate = sfinfo.samplerate;
+            channels = sfinfo.channels;
+            sf_close(snd);
+        }
+
+        if (channels > 0 && samplerate > 0) {
+            QJsonObject meta;
+            QImage cached = WaveformCache::load(WaveformCache::makeKey(m_filePath, size, mtime, channels, samplerate, static_cast<float>(dpr), preferredCachePx), &meta);
+            if (!cached.isNull()) {
+                m_wavePixmap = QPixmap::fromImage(cached);
+                m_hasWavePixmap = true;
+                {
+                    // Force cached pixmap to the container's logical height and width.
+                    QSize labelSize = availableDisplaySize();
+                    int containerW = labelSize.width();
+                    int containerH = labelSize.height();
+                    qreal widgetDpr = devicePixelRatioF();
+                    int targetWpx = static_cast<int>(std::ceil(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
+                    int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
+                    qDebug() << "setfile->cache labelSize=" << labelSize << "widgetDpr=" << widgetDpr << "srcPixmap=" << m_wavePixmap.size() << "srcDpr=" << m_wavePixmap.devicePixelRatio() << "targetPx=" << QSize(targetWpx, targetHpx);
+                    QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+                    scaled.setDevicePixelRatio(widgetDpr);
+                    m_waveform->setText(QString());
+                    m_waveform->setPixmap(scaled);
+                }
+                update();
+                double duration = meta.contains("duration") ? meta.value("duration").toDouble() : 0.0;
+                int sr = meta.contains("samplerate") ? meta.value("samplerate").toInt() : samplerate;
+                PlayheadManager::instance()->registerContainer(m_filePath, this, duration, sr);
+                return;
+            }
+        }
+
+        // No cache found and no job pending: enqueue a canonical generation job
         m_hasWavePixmap = false;
         m_waveform->setText(tr("Rendering..."));
-        m_pendingJobId = m_waveWorker->enqueueJob(m_filePath, px, dpr);
+        m_pendingJobId = m_waveWorker->enqueueJob(m_filePath, preferredCachePx, dpr);
     }
 }
 
@@ -471,29 +652,46 @@ void SoundContainer::setPlayheadPosition(float pos)
         m_playing = false;
         m_playheadPos = -1.0f;
         // restore original waveform pixmap when stopped
-        if (m_hasWavePixmap) {
-            m_waveform->setPixmap(m_wavePixmap.scaled(m_waveform->size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
-        }
+                if (m_hasWavePixmap) {
+                    // Restore original waveform pixmap scaled to container height and width
+                    QSize labelSize = availableDisplaySize();
+                    int containerW = labelSize.width();
+                    int containerH = labelSize.height();
+                    qreal widgetDpr = devicePixelRatioF();
+                    int targetWpx = static_cast<int>(std::ceil(containerW * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
+                    int targetHpx = static_cast<int>(std::ceil(containerH * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
+                    qDebug() << "playhead-restore labelSize=" << labelSize << "widgetDpr=" << widgetDpr << "srcPixmap=" << m_wavePixmap.size() << "srcDpr=" << m_wavePixmap.devicePixelRatio() << "targetPx=" << QSize(targetWpx, targetHpx);
+                    QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+                    scaled.setDevicePixelRatio(widgetDpr);
+                    m_waveform->setText(QString());
+                    m_waveform->setPixmap(scaled);
+                }
     } else {
         m_playing = true;
         m_playheadPos = pos;
         // draw an overlay playhead into a copy of the waveform pixmap so it appears above the waveform
-        if (m_hasWavePixmap && !m_wavePixmap.isNull()) {
-            QSize labelSize = m_waveform->size();
-            if (labelSize.width() > 0 && labelSize.height() > 0) {
-                QPixmap scaled = m_wavePixmap.scaled(labelSize, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-                QPixmap over = scaled.copy();
-                QPainter p(&over);
-                p.setRenderHint(QPainter::Antialiasing);
-                int x = static_cast<int>(m_playheadPos * over.width());
-                QPen pen(QColor(255,200,60, 220));
-                pen.setWidth(2);
-                p.setPen(pen);
-                p.drawLine(x, 2, x, over.height() - 2);
-                p.end();
-                m_waveform->setPixmap(over);
-            }
-        }
+                if (m_hasWavePixmap && !m_wavePixmap.isNull()) {
+                    QSize labelSize = availableDisplaySize();
+                    if (labelSize.width() > 0 && labelSize.height() > 0) {
+                        // Scale to container width and force container height; draw overlay in pixel coordinates
+                        qreal widgetDpr = devicePixelRatioF();
+                        int targetWpx = static_cast<int>(std::ceil(labelSize.width() * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
+                        int targetHpx = static_cast<int>(std::ceil(labelSize.height() * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
+                        QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+                        scaled.setDevicePixelRatio(widgetDpr);
+                        QPixmap over = scaled.copy();
+                        QPainter p(&over);
+                        p.setRenderHint(QPainter::Antialiasing);
+                        // compute playhead x in pixel coordinates relative to pixel width
+                        int x_px = static_cast<int>(std::round(m_playheadPos * targetWpx));
+                        QPen pen(QColor(255,200,60, 220));
+                        pen.setWidth(2);
+                        p.setPen(pen);
+                        p.drawLine(x_px, 2, x_px, over.height() - 2);
+                        p.end();
+                        m_waveform->setPixmap(over);
+                    }
+                }
     }
     // Log to debug file and update UI
     writeLocalDebug(QString("setPlayheadPosition this=%1 pos=%2 playing=%3").arg(reinterpret_cast<uintptr_t>(this)).arg(pos).arg(m_playing));
