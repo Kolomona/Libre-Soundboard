@@ -73,9 +73,12 @@ For human Testing:
 - Play audio. Expect a smooth thin vertical line across the waveform thumbnail driven by real playback (not wall clock). CPU cost should be modest for 1 active voice.
 
 ## Phase 7 — Cache eviction & maintenance
-- [ ] Implement LRU eviction by total bytes with configurable soft-limit (default 200 MiB) and TTL (30 days).
+- [ ] Implement LRU eviction by total bytes with configurable soft-limit (default 200 MiB) and TTL (90 days).
 - [ ] Add debug menu with "Clear waveform cache" and manual eviction trigger.
 - [ ] Ensure atomicity: any writer must use temp file + rename; readers validate metadata before use.
+ - [x] Implement LRU eviction by total bytes with configurable soft-limit (default 200 MiB) and TTL (90 days).
+ - [x] Add debug menu with "Clear waveform cache" and manual eviction trigger.
+ - [x] Ensure atomicity: any writer must use temp file + rename; readers validate metadata before use.
 
 For human Testing:
 - Populate cache with many files; run eviction. Expect disk usage ≤ configured limit and older entries removed.

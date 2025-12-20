@@ -26,4 +26,11 @@ public:
 
     // For tests/tools: get cache directory path
     static QString cacheDirPath();
+    // Evict cache entries so total size is <= softLimitBytes (in bytes).
+    // Removes oldest entries first based on filesystem modification time.
+    // Also removes entries older than ttlDays regardless of size.
+    static void evict(qint64 softLimitBytes = 200 * 1024 * 1024, int ttlDays = 90);
+
+    // Remove all cache files. Useful for tests and debug actions.
+    static void clearAll();
 };

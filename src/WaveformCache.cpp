@@ -5,6 +5,8 @@
 #include <QStandardPaths>
 #include <QCryptographicHash>
 #include <QDebug>
+#include <QDateTime>
+#include <algorithm>
 
 QString WaveformCache::cacheDirPath() {
     // Allow override for tests or custom locations
@@ -235,4 +237,106 @@ QImage WaveformCache::loadBest(const QString& path, qint64 size, qint64 mtime, i
 
     if (outMetadata) *outMetadata = chosenMeta;
     return img;
+}
+
+void WaveformCache::evict(qint64 softLimitBytes, int ttlDays)
+{
+    QString dir = cacheDirPath();
+    QDir d(dir);
+    if (!d.exists()) return;
+
+    // Collect candidate base names (without extension) for json/png pairs
+    QStringList jsonFiles = d.entryList(QStringList() << "*.json", QDir::Files, QDir::Name);
+    struct Entry { QString base; qint64 size; QDateTime mtime; };
+    QVector<Entry> entries;
+    qint64 total = 0;
+    for (const QString& jf : jsonFiles) {
+        QString base = jf;
+        if (base.endsWith(".json")) base.chop(5);
+        QString metaPath = d.filePath(base + ".json");
+        QString imgPath = d.filePath(base + ".png");
+        QFileInfo imi(metaPath);
+        if (!imi.exists()) continue;
+        QFileInfo ifi(imgPath);
+        qint64 s = imi.size() + (ifi.exists() ? ifi.size() : 0);
+        QDateTime m = imi.lastModified();
+        entries.push_back({base, s, m});
+        total += s;
+    }
+
+    // Also consider stray png files without json
+    QStringList pngFiles = d.entryList(QStringList() << "*.png", QDir::Files, QDir::Name);
+    for (const QString& pf : pngFiles) {
+        QString base = pf;
+        if (base.endsWith(".png")) base.chop(4);
+        // if we already accounted via json, skip
+        bool found = false;
+        for (const Entry& e : entries) if (e.base == base) { found = true; break; }
+        if (found) continue;
+        QString imgPath = d.filePath(base + ".png");
+        QFileInfo ifi(imgPath);
+        qint64 s = ifi.exists() ? ifi.size() : 0;
+        QDateTime m = ifi.lastModified();
+        entries.push_back({base, s, m});
+        total += s;
+    }
+
+    // Remove entries older than TTL first
+    QDateTime cutoff = QDateTime::currentDateTimeUtc().addDays(-ttlDays);
+    bool removedAny = false;
+    for (const Entry& e : entries) {
+        if (e.mtime < cutoff) {
+            QString imgPath = d.filePath(e.base + ".png");
+            QString metaPath = d.filePath(e.base + ".json");
+            bool r1 = QFile::remove(imgPath);
+            bool r2 = QFile::remove(metaPath);
+            if (r1 || r2) removedAny = true;
+            total -= e.size;
+            qDebug() << "WaveformCache::evict removed (TTL)" << e.base << e.size;
+        }
+    }
+
+    if (total <= softLimitBytes) return;
+
+    // Build remaining entries list
+    QVector<Entry> remain;
+    for (const Entry& e : entries) {
+        QString metaPath = d.filePath(e.base + ".json");
+        QString imgPath = d.filePath(e.base + ".png");
+        QFileInfo imi(metaPath);
+        QDateTime m = imi.exists() ? imi.lastModified() : QFileInfo(imgPath).lastModified();
+        // re-evaluate size
+        qint64 s = 0;
+        if (imi.exists()) s += imi.size();
+        QFileInfo ifi(imgPath);
+        if (ifi.exists()) s += ifi.size();
+        remain.push_back({e.base, s, m});
+    }
+
+    // Sort by mtime ascending (oldest first)
+    std::sort(remain.begin(), remain.end(), [](const Entry& a, const Entry& b){ return a.mtime < b.mtime; });
+
+    for (const Entry& e : remain) {
+        if (total <= softLimitBytes) break;
+        QString imgPath = d.filePath(e.base + ".png");
+        QString metaPath = d.filePath(e.base + ".json");
+        qint64 removedSize = 0;
+        QFileInfo ifi(imgPath);
+        if (ifi.exists()) { removedSize += ifi.size(); QFile::remove(imgPath); }
+        QFileInfo imi(metaPath);
+        if (imi.exists()) { removedSize += imi.size(); QFile::remove(metaPath); }
+        total -= removedSize;
+        qDebug() << "WaveformCache::evict removed" << e.base << removedSize << "remaining:" << total;
+    }
+}
+
+void WaveformCache::clearAll()
+{
+    QString dir = cacheDirPath();
+    QDir d(dir);
+    if (!d.exists()) return;
+    QStringList pngFiles = d.entryList(QStringList() << "*.png", QDir::Files);
+    for (const QString& f : pngFiles) QFile::remove(d.filePath(f));
+    QStringList jsonFiles = d.entryList(QStringList() << "*.json", QDir::Files);
+    for (const QString& f : jsonFiles) QFile::remove(d.filePath(f));
 }

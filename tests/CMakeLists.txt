@@ -40,3 +40,9 @@ add_executable(tests_playhead_manager
 )
 target_link_libraries(tests_playhead_manager PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Widgets Qt6::Gui Qt6::Core)
 add_test(NAME playhead_manager_tests COMMAND tests_playhead_manager)
+
+add_executable(tests_waveform_cache_eviction
+    ../tests/test_waveform_cache_eviction.cpp
+)
+target_link_libraries(tests_waveform_cache_eviction PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Core Qt6::Gui)
+add_test(NAME waveform_cache_eviction_tests COMMAND tests_waveform_cache_eviction)

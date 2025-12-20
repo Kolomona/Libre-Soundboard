@@ -34,6 +34,7 @@
 #include "AudioEngine.h"
 #include "PlayheadManager.h"
 #include "AudioFile.h"
+#include "WaveformCache.h"
 #include "CustomTabBar.h"
 #include "CustomTabWidget.h"
 
@@ -98,6 +99,18 @@ MainWindow::MainWindow(QWidget* parent)
 
     auto helpMenu = menuBar()->addMenu(tr("Help"));
     helpMenu->addAction(tr("About"));
+
+    // Debug submenu under Help: expose cache clear and manual eviction for testing
+    QMenu* debugMenu = helpMenu->addMenu(tr("Debug"));
+    debugMenu->addAction(tr("Clear waveform cache"), this, [this]() {
+        WaveformCache::clearAll();
+        statusBar()->showMessage(tr("Waveform cache cleared"), 2000);
+    });
+    debugMenu->addAction(tr("Evict waveform cache now"), this, [this]() {
+        // run eviction with default limits
+        WaveformCache::evict();
+        statusBar()->showMessage(tr("Waveform cache eviction complete"), 2000);
+    });
 
     // Create tabs, each with 32 SoundContainers (4 rows x 8 cols)
     #include "CustomTabBar.h"
