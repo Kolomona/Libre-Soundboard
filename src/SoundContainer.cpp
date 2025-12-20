@@ -669,29 +669,23 @@ void SoundContainer::setPlayheadPosition(float pos)
     } else {
         m_playing = true;
         m_playheadPos = pos;
-        // draw an overlay playhead into a copy of the waveform pixmap so it appears above the waveform
-                if (m_hasWavePixmap && !m_wavePixmap.isNull()) {
-                    QSize labelSize = availableDisplaySize();
-                    if (labelSize.width() > 0 && labelSize.height() > 0) {
-                        // Scale to container width and force container height; draw overlay in pixel coordinates
-                        qreal widgetDpr = devicePixelRatioF();
-                        int targetWpx = static_cast<int>(std::ceil(labelSize.width() * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
-                        int targetHpx = static_cast<int>(std::ceil(labelSize.height() * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
-                        QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-                        scaled.setDevicePixelRatio(widgetDpr);
-                        QPixmap over = scaled.copy();
-                        QPainter p(&over);
-                        p.setRenderHint(QPainter::Antialiasing);
-                        // compute playhead x in pixel coordinates relative to pixel width
-                        int x_px = static_cast<int>(std::round(m_playheadPos * targetWpx));
-                        QPen pen(QColor(255,200,60, 220));
-                        pen.setWidth(2);
-                        p.setPen(pen);
-                        p.drawLine(x_px, 2, x_px, over.height() - 2);
-                        p.end();
-                        m_waveform->setPixmap(over);
-                    }
-                }
+        // Ensure the label shows the original waveform pixmap (without any drawn
+        // playhead). Previously we mutated the label pixmap to draw the playhead,
+        // which produced a duplicate when `paintEvent` also drew the overlay.
+        if (m_hasWavePixmap && !m_wavePixmap.isNull()) {
+            QSize labelSize = availableDisplaySize();
+            if (labelSize.width() > 0 && labelSize.height() > 0) {
+                qreal widgetDpr = devicePixelRatioF();
+                int targetWpx = static_cast<int>(std::ceil(labelSize.width() * widgetDpr)); if (targetWpx < 1) targetWpx = 1;
+                int targetHpx = static_cast<int>(std::ceil(labelSize.height() * widgetDpr)); if (targetHpx < 1) targetHpx = 1;
+                QPixmap scaled = m_wavePixmap.scaled(QSize(targetWpx, targetHpx), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+                scaled.setDevicePixelRatio(widgetDpr);
+                m_waveform->setText(QString());
+                m_waveform->setPixmap(scaled);
+            }
+        }
+        // We rely on `paintEvent` to draw the transient playhead overlay above the waveform
+        // to avoid mutating the cached pixmap and producing duplicate playheads.
     }
     // Log to debug file and update UI
     writeLocalDebug(QString("setPlayheadPosition this=%1 pos=%2 playing=%3").arg(reinterpret_cast<uintptr_t>(this)).arg(pos).arg(m_playing));

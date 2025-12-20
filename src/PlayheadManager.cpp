@@ -119,6 +119,17 @@ void PlayheadManager::unregisterContainer(const QString& id, SoundContainer* sc)
     if (list.isEmpty()) m_map.remove(id);
 }
 
+float PlayheadManager::getLastPos(const QString& id, SoundContainer* sc) const
+{
+    if (id.isEmpty() || !sc) return -2.0f;
+    if (!m_map.contains(id)) return -2.0f;
+    const auto &list = m_map[id];
+    for (const auto &e : list) {
+        if (e.sc == sc) return e.lastPos;
+    }
+    return -2.0f;
+}
+
 void PlayheadManager::onTick()
 {
     if (!m_engine) return;

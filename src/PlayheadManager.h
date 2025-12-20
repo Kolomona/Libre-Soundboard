@@ -25,6 +25,9 @@ public:
     void registerContainer(const QString& id, SoundContainer* sc, double durationSeconds, int sampleRate);
     void unregisterContainer(const QString& id, SoundContainer* sc);
 
+        // Test helper: return last cached normalized position for a registered container
+        float getLastPos(const QString& id, SoundContainer* sc) const;
+
     // Notify manager that playback was started/stopped for an id (used when AudioEngine isn't available)
     void playbackStarted(const QString& id, SoundContainer* sc);
     void playbackStopped(const QString& id, SoundContainer* sc);

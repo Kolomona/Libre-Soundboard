@@ -64,10 +64,10 @@ For human Testing:
 - Drag a small audio file into a slot. Expect placeholder text then a waveform thumbnail, no UI freeze. Resize the slot and expect a re-request and new thumbnail.
 
 ## Phase 6 — Playhead manager & authoritative timing
-- [ ] Implement `PlayheadManager` with a single QTimer (configurable, default 30Hz). Manager holds weak refs to visible containers and per-container duration/totalSamples metadata.
-- [ ] Add `AudioEngine::getPlaybackSnapshot(id)` (lock-free/atomic) that returns currentSamplesPlayed, sampleRate, totalSamples.
-- [ ] Manager maps samples -> normalized position: pos = currentSamplesPlayed / totalSamples (use duration or totalSamples/sampleRate as fallback). Notify containers only when pos changes by > epsilon.
-- [ ] Unit test: feed synthetic snapshots -> manager notifies only on change and respects cancellation/unregister.
+- [x] Implement `PlayheadManager` with a single QTimer (configurable, default 30Hz). Manager holds weak refs to visible containers and per-container duration/totalSamples metadata.
+- [x] Add `AudioEngine::getPlaybackSnapshot(id)` (lock-free/atomic) that returns currentSamplesPlayed, sampleRate, totalSamples.
+- [x] Manager maps samples -> normalized position: pos = currentSamplesPlayed / totalSamples (use duration or totalSamples/sampleRate as fallback). Notify containers only when pos changes by > epsilon.
+- [x] Unit test: feed synthetic snapshots -> manager notifies only on change and respects cancellation/unregister.
 
 For human Testing:
 - Play audio. Expect a smooth thin vertical line across the waveform thumbnail driven by real playback (not wall clock). CPU cost should be modest for 1 active voice.

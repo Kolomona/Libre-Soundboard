@@ -34,3 +34,9 @@ add_executable(tests_soundcontainer_cache_flow
 )
 target_link_libraries(tests_soundcontainer_cache_flow PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Widgets Qt6::Gui Qt6::Core)
 add_test(NAME soundcontainer_cache_flow_tests COMMAND tests_soundcontainer_cache_flow)
+
+add_executable(tests_playhead_manager
+    ../tests/test_playhead_manager.cpp
+)
+target_link_libraries(tests_playhead_manager PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Widgets Qt6::Gui Qt6::Core)
+add_test(NAME playhead_manager_tests COMMAND tests_playhead_manager)
