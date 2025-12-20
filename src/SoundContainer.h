@@ -87,4 +87,6 @@ private:
     bool m_playing = false;
     // Normalized [0,1] playhead position; negative means hidden
     float m_playheadPos = -1.0f;
+    // Reset the container UI to its default (untouched) appearance
+    void resetToDefaultAppearance();
 };

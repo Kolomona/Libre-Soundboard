@@ -160,6 +160,9 @@ SoundContainer::SoundContainer(QWidget* parent)
 
     // Note: contextMenuEvent is overridden below to prevent the menu
     // from appearing while a right-button drag/press is in progress.
+
+    // Ensure the initial UI matches the default appearance used for cleared slots
+    resetToDefaultAppearance();
 }
 
 // Worker signal handlers
@@ -239,10 +242,13 @@ void SoundContainer::onWaveformError(const WaveformJob& job, const QString& err)
     qDebug() << "onWaveformError job.id=" << job.id << "err=" << err;
     Q_UNUSED(job);
     Q_UNUSED(err);
-    // For now, just keep placeholder text; ensure we don't mistakenly show previous pixmap
+    // For now, just clear waveform display and if no file is set restore default appearance
     m_hasWavePixmap = false;
     m_waveform->setPixmap(QPixmap());
-    m_filenameLabel->setText(m_filePath.isEmpty() ? tr("Drop audio file here") : QFileInfo(m_filePath).fileName());
+    if (m_filePath.isEmpty()) resetToDefaultAppearance();
+    else {
+        m_filenameLabel->setText(QFileInfo(m_filePath).fileName());
+    }
     update();
 }
 
@@ -424,10 +430,7 @@ void SoundContainer::setFile(const QString& path)
             PlayheadManager::instance()->unregisterContainer(m_filePath, this);
         }
         m_filePath.clear();
-        m_waveform->setPixmap(QPixmap());
-        m_hasWavePixmap = false;
-        m_waveform->setText(tr("Drop audio file here"));
-        m_waveform->setToolTip(QString());
+        resetToDefaultAppearance();
         setVolume(0.8f);
         emit fileChanged(QString());
         return;
@@ -734,6 +737,46 @@ void SoundContainer::dropEvent(QDropEvent* event)
         }
     }
     event->ignore();
+}
+
+void SoundContainer::resetToDefaultAppearance()
+{
+    // Clear waveform display
+    m_waveform->setPixmap(QPixmap());
+    m_hasWavePixmap = false;
+    // Clear waveform text area
+    m_waveform->setText(QString());
+    m_waveform->setToolTip(QString());
+    // Ensure waveform label alignment/margins match constructor defaults
+    m_waveform->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_waveform->setContentsMargins(0,0,0,0);
+    // Re-apply constructor visual constraints so cleared slots match fresh ones
+    m_waveform->setMinimumSize(120, 60);
+    m_waveform->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    // Show prompt in filename label (untouched appearance)
+    if (m_filenameLabel) {
+        m_filenameLabel->setText(tr("Drop audio file here"));
+        m_filenameLabel->setToolTip(QString());
+        m_filenameLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        m_filenameLabel->setIndent(6);
+    }
+    // Clear playhead overlay
+    m_playing = false;
+    m_playheadPos = -1.0f;
+    // Reset control widgets to constructor defaults
+    if (m_playBtn) m_playBtn->setText(tr("Play"));
+    if (m_volume) {
+        m_volume->setRange(0, 100);
+        m_volume->setValue(80);
+        m_volume->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    }
+    // Ensure frame and margins match constructor defaults
+    setFrameShape(QFrame::StyledPanel);
+    setFrameShadow(QFrame::Plain);
+    setLineWidth(1);
+    setMidLineWidth(0);
+    setContentsMargins(6,6,6,6);
+    update();
 }
 
 float SoundContainer::volume() const
