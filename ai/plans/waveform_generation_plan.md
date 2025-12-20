@@ -25,6 +25,10 @@ For human Testing:
 - [ ] Make accumulation stream-friendly: only keep current bucket aggregates and append min/max pairs as finished.
 - [ ] Expose progress updates and early completion when cancellation requested.
 - [ ] Unit test: synthetic signals (constant, ramp, impulses) -> verify min/max arrays.
+- [x] Implement base-level accumulation: compute per-bucket min/max for a target bucket size derived from `totalSamples / (pixelWidth * dpr)`.
+- [x] Make accumulation stream-friendly: only keep current bucket aggregates and append min/max pairs as finished.
+- [ ] Expose progress updates and early completion when cancellation requested.
+- [x] Unit test: synthetic signals (constant, ramp, impulses) -> verify min/max arrays.
 
 For human Testing:
 - Run unit tests for base accumulation. Expect arrays length ≈ pixelWidth*dpr and min/max values matching synthetic input.

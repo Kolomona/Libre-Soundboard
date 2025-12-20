@@ -96,3 +96,35 @@ TEST_CASE("WaveformWorker cancellation returns quickly") {
 
     QFile::remove(path);
 }
+
+TEST_CASE("WaveformWorker base accumulation matches expectations") {
+    QTemporaryFile tf;
+    tf.setAutoRemove(false);
+    REQUIRE(tf.open());
+    QString path = tf.fileName();
+    tf.close();
+
+    int sr = 8000;
+    int channels = 1;
+    int frames = 8;
+    std::vector<float> samples = {0.1f, 0.2f, 0.3f, 0.4f, 0.5f, -0.7f, 0.8f, -0.1f};
+    REQUIRE(write_test_wav(path, sr, channels, samples));
+
+    // Request 4 pixels -> 2 frames per bucket
+    WaveformResult res = WaveformWorker::decodeFile(path, 4, 1.0);
+    REQUIRE(res.sampleRate == sr);
+    REQUIRE(res.channels == channels);
+    REQUIRE(res.min.size() == 4);
+    REQUIRE(res.max.size() == 4);
+
+    // Expected per-bucket min/max (downmixed and using abs)
+    std::vector<float> expMin = {-0.2f, -0.4f, -0.7f, -0.8f};
+    std::vector<float> expMax = {0.2f, 0.4f, 0.7f, 0.8f};
+
+    for (size_t i = 0; i < expMin.size(); ++i) {
+        REQUIRE(res.min[i] == Approx(expMin[i]).margin(1e-3));
+        REQUIRE(res.max[i] == Approx(expMax[i]).margin(1e-3));
+    }
+
+    QFile::remove(path);
+}

@@ -7,6 +7,7 @@
 #include "AudioFile.h"
 #include <cmath>
 #include <QMutexLocker>
+#include <sndfile.h>
 
 class WaveformRunnable : public QRunnable {
 public:
@@ -104,8 +105,103 @@ WaveformResult WaveformWorker::decodeFile(const QString& path, int pixelWidth, q
                                           QSharedPointer<QAtomicInteger<int>> cancelToken)
 {
     WaveformResult out;
-    // Use AudioFile to read all samples (simple for phase 1). This may be
-    // optimized later to stream and avoid full-file buffering.
+    if (path.isEmpty()) return out;
+
+    // Prefer streaming via libsndfile when available to avoid buffering entire file
+    QByteArray ba = path.toLocal8Bit();
+    const char* cpath = ba.constData();
+    SF_INFO sfinfo;
+    memset(&sfinfo, 0, sizeof(sfinfo));
+    SNDFILE* snd = sf_open(cpath, SFM_READ, &sfinfo);
+    if (snd) {
+        int sampleRate = sfinfo.samplerate;
+        int channels = sfinfo.channels;
+        sf_count_t frames = sfinfo.frames;
+        if (sampleRate <= 0 || channels <= 0 || frames <= 0) {
+            sf_close(snd);
+            return out;
+        }
+
+        out.sampleRate = sampleRate;
+        out.channels = channels;
+        out.duration = static_cast<double>(frames) / static_cast<double>(sampleRate);
+
+        int targetPixels = qMax(1, static_cast<int>(std::ceil(pixelWidth * dpr)));
+        sf_count_t samplesPerBucket = (frames + targetPixels - 1) / targetPixels;
+        if (samplesPerBucket <= 0) samplesPerBucket = 1;
+
+        out.min.reserve(targetPixels);
+        out.max.reserve(targetPixels);
+
+        const int CHUNK_FRAMES = 4096;
+        std::vector<float> buf(static_cast<size_t>(CHUNK_FRAMES * channels));
+
+        sf_count_t bucketFramesSeen = 0;
+        float bucketMin = std::numeric_limits<float>::infinity();
+        float bucketMax = -std::numeric_limits<float>::infinity();
+        sf_count_t totalFramesRead = 0;
+
+        while (totalFramesRead < frames) {
+            if (cancelToken && cancelToken->loadRelaxed() != 0) {
+                // Signal cancellation via empty result (sampleRate == 0)
+                out.min.clear(); out.max.clear(); out.sampleRate = 0;
+                sf_close(snd);
+                return out;
+            }
+
+            int want = static_cast<int>(std::min<sf_count_t>(CHUNK_FRAMES, frames - totalFramesRead));
+            sf_count_t got = sf_readf_float(snd, buf.data(), want);
+            if (got <= 0) break;
+
+            for (sf_count_t f = 0; f < got; ++f) {
+                // compute downmixed per-frame amplitude (max abs across channels)
+                float sampleVal = 0.0f;
+                size_t baseIdx = static_cast<size_t>(f) * static_cast<size_t>(channels);
+                for (int c = 0; c < channels; ++c) {
+                    float s = buf[baseIdx + c];
+                    sampleVal = std::max(sampleVal, std::abs(s));
+                }
+                bucketMin = std::min(bucketMin, -sampleVal);
+                bucketMax = std::max(bucketMax, sampleVal);
+                ++bucketFramesSeen;
+                ++totalFramesRead;
+
+                if (bucketFramesSeen >= samplesPerBucket) {
+                    // finished bucket
+                    if (bucketMin == std::numeric_limits<float>::infinity()) bucketMin = 0.0f;
+                    if (bucketMax == -std::numeric_limits<float>::infinity()) bucketMax = 0.0f;
+                    out.min.push_back(bucketMin);
+                    out.max.push_back(bucketMax);
+                    bucketFramesSeen = 0;
+                    bucketMin = std::numeric_limits<float>::infinity();
+                    bucketMax = -std::numeric_limits<float>::infinity();
+                    // early exit if we've gathered enough pixels
+                    if (static_cast<int>(out.min.size()) >= targetPixels) break;
+                }
+            }
+
+            if (static_cast<int>(out.min.size()) >= targetPixels) break;
+        }
+
+        // If there is a trailing partial bucket and we still need pixels, push it
+        if (static_cast<int>(out.min.size()) < targetPixels && bucketFramesSeen > 0) {
+            if (bucketMin == std::numeric_limits<float>::infinity()) bucketMin = 0.0f;
+            if (bucketMax == -std::numeric_limits<float>::infinity()) bucketMax = 0.0f;
+            out.min.push_back(bucketMin);
+            out.max.push_back(bucketMax);
+        }
+
+        // If we produced fewer pixels than target, pad with zeros
+        while (static_cast<int>(out.min.size()) < targetPixels) {
+            out.min.push_back(0.0f);
+            out.max.push_back(0.0f);
+        }
+
+        sf_close(snd);
+        return out;
+    }
+
+    // Fallback: use AudioFile (reads entire file) — keeps previous behavior for formats
     AudioFile af;
     if (!af.load(path)) {
         return out;
@@ -125,41 +221,51 @@ WaveformResult WaveformWorker::decodeFile(const QString& path, int pixelWidth, q
     out.channels = channels;
     out.duration = static_cast<double>(totalFrames) / static_cast<double>(sampleRate);
 
-    // Simple per-pixel min/max buckets for the requested pixel width
     int targetPixels = qMax(1, static_cast<int>(std::ceil(pixelWidth * dpr)));
     size_t samplesPerBucket = (totalFrames + targetPixels - 1) / targetPixels; // ceil div
     if (samplesPerBucket == 0) samplesPerBucket = 1;
 
-    out.min.resize(targetPixels);
-    out.max.resize(targetPixels);
+    out.min.reserve(targetPixels);
+    out.max.reserve(targetPixels);
 
-    for (int p = 0; p < targetPixels; ++p) {
+    size_t framesSeen = 0;
+    float vmin = std::numeric_limits<float>::infinity();
+    float vmax = -std::numeric_limits<float>::infinity();
+
+    for (size_t f = 0; f < totalFrames; ++f) {
         if (cancelToken && cancelToken->loadRelaxed() != 0) {
-            // Return what we have so far (caller will treat cancellation)
-            out.min.resize(0);
-            out.max.resize(0);
-            out.sampleRate = 0;
-            return out;
+            out.min.clear(); out.max.clear(); out.sampleRate = 0; return out;
         }
-        float vmin = std::numeric_limits<float>::infinity();
-        float vmax = -std::numeric_limits<float>::infinity();
-        size_t start = static_cast<size_t>(p) * samplesPerBucket;
-        size_t end = std::min(start + samplesPerBucket, totalFrames);
-        for (size_t f = start; f < end; ++f) {
-            // Downmix to mono by taking max absolute across channels
-            float sampleVal = 0.0f;
-            for (int c = 0; c < channels; ++c) {
-                float s = samples[f * channels + c];
-                sampleVal = std::max(sampleVal, std::abs(s));
-            }
-            vmin = std::min(vmin, -sampleVal);
-            vmax = std::max(vmax, sampleVal);
+        float sampleVal = 0.0f;
+        for (int c = 0; c < channels; ++c) {
+            float s = samples[f * channels + c];
+            sampleVal = std::max(sampleVal, std::abs(s));
         }
-        if (start >= end) {
-            vmin = 0.0f; vmax = 0.0f;
+        vmin = std::min(vmin, -sampleVal);
+        vmax = std::max(vmax, sampleVal);
+        ++framesSeen;
+        if (framesSeen >= samplesPerBucket) {
+            if (vmin == std::numeric_limits<float>::infinity()) vmin = 0.0f;
+            if (vmax == -std::numeric_limits<float>::infinity()) vmax = 0.0f;
+            out.min.push_back(vmin);
+            out.max.push_back(vmax);
+            framesSeen = 0;
+            vmin = std::numeric_limits<float>::infinity();
+            vmax = -std::numeric_limits<float>::infinity();
+            if (static_cast<int>(out.min.size()) >= targetPixels) break;
         }
-        out.min[p] = vmin;
-        out.max[p] = vmax;
+    }
+
+    if (static_cast<int>(out.min.size()) < targetPixels && framesSeen > 0) {
+        if (vmin == std::numeric_limits<float>::infinity()) vmin = 0.0f;
+        if (vmax == -std::numeric_limits<float>::infinity()) vmax = 0.0f;
+        out.min.push_back(vmin);
+        out.max.push_back(vmax);
+    }
+
+    while (static_cast<int>(out.min.size()) < targetPixels) {
+        out.min.push_back(0.0f);
+        out.max.push_back(0.0f);
     }
 
     return out;
