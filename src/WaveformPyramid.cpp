@@ -13,6 +13,7 @@ QVector<WaveformLevel> WaveformPyramid::build(const QVector<float>& interleavedS
     // Level 0: compute min/max per bucket of baseBucket frames
     WaveformLevel level0;
     int framesPerBucket = baseBucket;
+    level0.samplesPerBucket = framesPerBucket;
     int numBuckets = (totalFrames + framesPerBucket - 1) / framesPerBucket;
     level0.min.reserve(numBuckets);
     level0.max.reserve(numBuckets);
@@ -42,10 +43,11 @@ QVector<WaveformLevel> WaveformPyramid::build(const QVector<float>& interleavedS
 
     levels.push_back(std::move(level0));
 
-    // Build coarser levels by combining pairs
+    // Build coarser levels by combining pairs. Each coarser level doubles the samplesPerBucket.
     while (levels.back().min.size() > 1) {
         const WaveformLevel& prev = levels.back();
         WaveformLevel next;
+        next.samplesPerBucket = prev.samplesPerBucket * 2;
         int prevBuckets = prev.min.size();
         int nextBuckets = (prevBuckets + 1) / 2;
         next.min.reserve(nextBuckets);

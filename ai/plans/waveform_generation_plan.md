@@ -34,9 +34,9 @@ For human Testing:
 - Run unit tests for base accumulation. Expect arrays length ≈ pixelWidth*dpr and min/max values matching synthetic input.
 
 ## Phase 3 — Pyramid builder (multi-resolution)
-- [ ] Build pyramid levels by combining base-level pairs: next.min = min(a.min,b.min), next.max = max(a.max,b.max).
-- [ ] Record samplesPerBucket for each level and stop when level bucket <= 1 sample or level count reaches ~ceil(log2(baseBucket)).
-- [ ] Unit test: small buffers -> check each level correctness.
+- [x] Build pyramid levels by combining base-level pairs: next.min = min(a.min,b.min), next.max = max(a.max,b.max).
+- [x] Record samplesPerBucket for each level and stop when level bucket <= 1 sample or level count reaches ~ceil(log2(baseBucket)).
+- [x] Unit test: small buffers -> check each level correctness.
 
 For human Testing:
 - Run pyramid unit tests. Expect deterministic level values and consistent samplesPerBucket metadata.

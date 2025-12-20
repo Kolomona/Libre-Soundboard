@@ -5,6 +5,8 @@
 struct WaveformLevel {
     QVector<float> min;
     QVector<float> max;
+    // Number of frames (samples per channel) that each bucket in this level represents
+    int samplesPerBucket = 0;
 };
 
 class WaveformPyramid {

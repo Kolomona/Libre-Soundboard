@@ -33,6 +33,10 @@ TEST_CASE("pyramid mono small buffer", "[waveform][pyramid]") {
     REQUIRE(levels[1].max[0] == Approx(0.7f));
     REQUIRE(levels[1].min[1] == Approx(-0.3f));
     REQUIRE(levels[1].max[1] == Approx(0.1f));
+
+    // samplesPerBucket metadata
+    REQUIRE(levels[0].samplesPerBucket == baseBucket);
+    REQUIRE(levels[1].samplesPerBucket == baseBucket * 2);
 }
 
 TEST_CASE("pyramid stereo interleaved", "[waveform][pyramid]") {
@@ -56,6 +60,9 @@ TEST_CASE("pyramid stereo interleaved", "[waveform][pyramid]") {
     // Bucket 1 values: frames 2 and 3 -> -0.3,0.3,0.2,0.4 -> min -0.3 max 0.4
     REQUIRE(levels[0].min[1] == Approx(-0.3f));
     REQUIRE(levels[0].max[1] == Approx(0.4f));
+
+    // metadata
+    REQUIRE(levels[0].samplesPerBucket == baseBucket);
 }
 
 TEST_CASE("select level for pixel width", "[waveform][pyramid][select]") {
