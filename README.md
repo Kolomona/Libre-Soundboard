@@ -4,6 +4,14 @@ LibreSoundboard is a native Linux desktop soundboard application implemented in 
 
 **Note: This project has been entirely vibe coded by AI so it likely has a lot of bugs in it** 🙂
 
+## Reasoning
+
+This app was born out of my frustration for not being able to find a usable soundboard that works with JACK.
+
+For you windows users there are tons of great soundboard apps for you to choose from. Therefore I will NOT be making this app cross platform.
+
+This app is specifically made for me and my purposes. If it works for you then great, but it's really supposed to work for me 🙂
+
 **What the project does**
 
 - Provides a tabbed soundboard UI where each tab contains a grid of sound slots (`SoundContainer` widgets).
