@@ -7,6 +7,7 @@ class QSpinBox;
 class QComboBox;
 class QCheckBox;
 class QPushButton;
+class QLineEdit;
 
 class PrefAudioEnginePage : public PreferencesPage {
     Q_OBJECT
@@ -33,12 +34,17 @@ public:
 private:
     QSpinBox* m_size = nullptr;
     QSpinBox* m_ttl = nullptr;
+    QLineEdit* m_cacheDir = nullptr;
 };
 
 class PrefFileHandlingPage : public PreferencesPage {
     Q_OBJECT
 public:
-    explicit PrefFileHandlingPage(QWidget* parent = nullptr) : PreferencesPage(parent) {}
+    explicit PrefFileHandlingPage(QWidget* parent = nullptr);
+    void apply() override;
+    void reset() override;
+private:
+    QLineEdit* m_soundDir = nullptr;
 };
 
 class PrefKeyboardShortcutsPage : public PreferencesPage {

@@ -83,13 +83,13 @@ LibreSoundboard has 10 key user-configurable preferences currently hardcoded or 
 **Goals:** Implement Cache Directory, Default Sound Directory
 
 **Tasks:**
-- [ ] Implement FileHandling preferences page with file picker button: Default Sound Directory
-- [ ] Implement WaveformCache preferences page with file picker button: Cache Directory
-- [ ] Add validatePath() to PreferencesManager (ensure directory exists, is writable)
-- [ ] MainWindow file dialogs use PreferencesManager::defaultSoundDirectory() as initial dir
-- [ ] WaveformCache uses PreferencesManager::cacheDirectory() instead of hardcoded path
-- [ ] Reset button populates file paths with defaults from code
-- [ ] Build succeeds
+- [x] Implement FileHandling preferences page with file picker button: Default Sound Directory
+- [x] Implement WaveformCache preferences page with file picker button: Cache Directory
+- [x] Add validatePath() to PreferencesManager (ensure directory exists, is writable)
+- [x] MainWindow file dialogs use PreferencesManager::defaultSoundDirectory() as initial dir
+- [x] WaveformCache uses PreferencesManager::cacheDirectory() instead of hardcoded path
+- [x] Reset button populates file paths with defaults from code
+- [x] Build succeeds
 
 **Notes:** File pickers use QFileDialog::getExistingDirectory(). Show error if chosen path is invalid.
 

@@ -9,6 +9,9 @@
 #include <QCheckBox>
 #include <QPushButton>
 #include <QHBoxLayout>
+#include <QLineEdit>
+#include <QFileDialog>
+#include <QMessageBox>
 #include "DebugLog.h"
 
 // Implement the existing page classes with UI and apply/reset logic
@@ -29,6 +32,37 @@ PrefWaveformCachePage::PrefWaveformCachePage(QWidget* parent)
 	m_ttl->setRange(0, 3650);
 	m_ttl->setSuffix(" days");
 	form->addRow(tr("Cache TTL"), m_ttl);
+	
+	// Phase 4: Add cache directory field
+	m_cacheDir = new QLineEdit(this);
+	m_cacheDir->setObjectName("editCacheDir");
+	m_cacheDir->setReadOnly(true);
+	
+	auto* dirRow = new QHBoxLayout();
+	dirRow->addWidget(m_cacheDir);
+	
+	auto* btnBrowse = new QPushButton(tr("Browse..."), this);
+	btnBrowse->setObjectName("btnBrowseCacheDir");
+	dirRow->addWidget(btnBrowse);
+	
+	form->addRow(tr("Cache Directory"), dirRow);
+	
+	connect(btnBrowse, &QPushButton::clicked, this, [this]() {
+		QString path = QFileDialog::getExistingDirectory(
+			this,
+			tr("Select Cache Directory"),
+			m_cacheDir->text()
+		);
+		if (!path.isEmpty()) {
+			if (PreferencesManager::instance().validatePath(path)) {
+				m_cacheDir->setText(path);
+			} else {
+				QMessageBox::warning(this, tr("Invalid Directory"), 
+					tr("Selected directory does not exist or is not writable."));
+			}
+		}
+	});
+	
 	v->addLayout(form);
 	v->addStretch();
 	setLayout(v);
@@ -40,6 +74,9 @@ void PrefWaveformCachePage::apply()
 	auto& pm = PreferencesManager::instance();
 	pm.setCacheSoftLimitMB(m_size->value());
 	pm.setCacheTtlDays(m_ttl->value());
+	if (m_cacheDir) {
+		pm.setCacheDirectory(m_cacheDir->text());
+	}
 }
 
 void PrefWaveformCachePage::reset()
@@ -47,6 +84,9 @@ void PrefWaveformCachePage::reset()
 	auto& pm = PreferencesManager::instance();
 	m_size->setValue(pm.cacheSoftLimitMB());
 	m_ttl->setValue(pm.cacheTtlDays());
+	if (m_cacheDir) {
+		m_cacheDir->setText(pm.cacheDirectory());
+	}
 }
 
 // Audio Engine
@@ -253,3 +293,55 @@ void PrefKeepAlivePage::updateVolumeControls()
 	// Override volume should be enabled only when NOT using slot volume
 	m_overrideVolume->setEnabled(!m_useSlotVolume->isChecked());
 }
+// Phase 4: File Handling Page
+PrefFileHandlingPage::PrefFileHandlingPage(QWidget* parent)
+	: PreferencesPage(parent)
+{
+	auto* v = new QVBoxLayout(this);
+	auto* form = new QFormLayout();
+	
+	m_soundDir = new QLineEdit(this);
+	m_soundDir->setObjectName("editDefaultSoundDir");
+	m_soundDir->setReadOnly(true);
+	
+	auto* dirRow = new QHBoxLayout();
+	dirRow->addWidget(m_soundDir);
+	
+	auto* btnBrowse = new QPushButton(tr("Browse..."), this);
+	btnBrowse->setObjectName("btnBrowseSoundDir");
+	dirRow->addWidget(btnBrowse);
+	
+	form->addRow(tr("Default Sound Directory"), dirRow);
+	
+	connect(btnBrowse, &QPushButton::clicked, this, [this]() {
+		QString path = QFileDialog::getExistingDirectory(
+			this,
+			tr("Select Default Sound Directory"),
+			m_soundDir->text()
+		);
+		if (!path.isEmpty()) {
+			if (PreferencesManager::instance().validatePath(path)) {
+				m_soundDir->setText(path);
+			} else {
+				QMessageBox::warning(this, tr("Invalid Directory"), 
+					tr("Selected directory does not exist or is not writable."));
+			}
+		}
+	});
+	
+	v->addLayout(form);
+	v->addStretch();
+	setLayout(v);
+	reset();
+}
+
+void PrefFileHandlingPage::apply()
+{
+	PreferencesManager::instance().setDefaultSoundDirectory(m_soundDir->text());
+}
+
+void PrefFileHandlingPage::reset()
+{
+	m_soundDir->setText(PreferencesManager::instance().defaultSoundDirectory());
+}
+

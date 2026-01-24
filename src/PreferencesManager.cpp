@@ -1,4 +1,8 @@
 #include "PreferencesManager.h"
+#include <QDir>
+#include <QFile>
+#include <QStandardPaths>
+#include <cstdlib>
 
 PreferencesManager& PreferencesManager::instance() {
     static PreferencesManager mgr;
@@ -166,4 +170,58 @@ bool PreferencesManager::keepAliveAutoConnectInput() const {
 
 void PreferencesManager::setKeepAliveAutoConnectInput(bool enabled) {
     m_settings.setValue("keepalive/autoConnectInput", enabled);
+}
+// Phase 4: File/Path preferences
+bool PreferencesManager::validatePath(const QString& path) const {
+    QDir d(path);
+    if (!d.exists()) {
+        return false;
+    }
+    // Check if directory is writable by trying to create a test file
+    QString testFile = d.filePath(".writabletest");
+    QFile f(testFile);
+    if (!f.open(QIODevice::WriteOnly)) {
+        return false;
+    }
+    f.close();
+    QFile::remove(testFile);
+    return true;
+}
+
+QString PreferencesManager::defaultSoundDirectory() const {
+    QString def = QDir::homePath();
+    return m_settings.value("file/defaultSoundDirectory", def).toString();
+}
+
+void PreferencesManager::setDefaultSoundDirectory(const QString& path) {
+    m_settings.setValue("file/defaultSoundDirectory", path);
+}
+
+QString PreferencesManager::cacheDirectory() const {
+    // Return the configured cache directory, or compute a default
+    QString stored = m_settings.value("cache/cacheDirectory", "").toString();
+    if (!stored.isEmpty()) {
+        return stored;
+    }
+    
+    // Compute default based on WaveformCache logic
+    const char* env = std::getenv("LIBRE_WAVEFORM_CACHE_DIR");
+    if (env && env[0]) {
+        return QString::fromUtf8(env);
+    }
+    
+    QString base = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    if (base.isEmpty()) base = QDir::homePath() + "/.cache";
+    
+    QDir d(base);
+    while (d.dirName() == "libresoundboard") {
+        if (!d.cdUp()) break;
+    }
+    
+    QString finalBase = QDir(d.absolutePath()).filePath("libresoundboard");
+    return QDir(finalBase).filePath("waveforms");
+}
+
+void PreferencesManager::setCacheDirectory(const QString& path) {
+    m_settings.setValue("cache/cacheDirectory", path);
 }

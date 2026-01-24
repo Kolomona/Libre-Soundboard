@@ -10,34 +10,13 @@
 #include "PreferencesManager.h"
 
 QString WaveformCache::cacheDirPath() {
-    // Allow override for tests or custom locations
-    const char* env = std::getenv("LIBRE_WAVEFORM_CACHE_DIR");
-    if (env && env[0]) {
-        QString p = QString::fromUtf8(env);
-        QDir pd(p);
-        if (!pd.exists()) pd.mkpath(".");
-        return p;
-    }
-
-    // Prefer platform cache location so files survive reboots.
-    QString base = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
-    if (base.isEmpty()) base = QDir::homePath() + "/.cache";
-    // Normalize: collapse any number of trailing 'libresoundboard' segments
-    // into exactly one, then append 'waveforms'. This guarantees the final
-    // path is .../.cache/libresoundboard/waveforms regardless of odd
-    // platform-returned base values.
-    QDir d(base);
-    // Move up while the current directory name is 'libresoundboard' so we
-    // remove repeated trailing segments like /.../libresoundboard/libresoundboard
-    while (d.dirName() == "libresoundboard") {
-        if (!d.cdUp()) break;
-    }
-    // Now ensure exactly one 'libresoundboard' segment
-    QString finalBase = QDir(d.absolutePath()).filePath("libresoundboard");
-    QString p = QDir(finalBase).filePath("waveforms");
-    QDir pdir(p);
+    // Phase 4: Get cache directory from PreferencesManager
+    // This allows users to configure it via preferences
+    QString cacheDir = PreferencesManager::instance().cacheDirectory();
+    
+    QDir pdir(cacheDir);
     if (!pdir.exists()) pdir.mkpath(".");
-    return p;
+    return cacheDir;
 }
 
 QString WaveformCache::makeKey(const QString& path, qint64 size, qint64 mtime, int channels, int samplerate, float dpr, int pixelWidth) {

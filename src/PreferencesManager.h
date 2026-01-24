@@ -47,6 +47,18 @@ public:
     bool keepAliveAutoConnectInput() const;        // default true
     void setKeepAliveAutoConnectInput(bool enabled);
 
+    // Phase 4: File/Path preferences
+    // Validate that a directory path exists and is writable
+    bool validatePath(const QString& path) const;
+    
+    // Get the default directory for opening sound files
+    QString defaultSoundDirectory() const;
+    void setDefaultSoundDirectory(const QString& path);
+    
+    // Get the cache directory for waveform data
+    QString cacheDirectory() const;
+    void setCacheDirectory(const QString& path);
+
 private:
     PreferencesManager();
     ~PreferencesManager();
