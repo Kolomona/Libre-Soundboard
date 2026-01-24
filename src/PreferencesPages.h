@@ -22,7 +22,16 @@ private:
 class PrefGridLayoutPage : public PreferencesPage {
     Q_OBJECT
 public:
-    explicit PrefGridLayoutPage(QWidget* parent = nullptr) : PreferencesPage(parent) {}
+    explicit PrefGridLayoutPage(QWidget* parent = nullptr);
+    void apply() override;
+    void reset() override;
+
+signals:
+    void dimensionsChanged(int rows, int cols);
+
+private:
+    QSpinBox* m_rows = nullptr;
+    QSpinBox* m_cols = nullptr;
 };
 
 class PrefWaveformCachePage : public PreferencesPage {

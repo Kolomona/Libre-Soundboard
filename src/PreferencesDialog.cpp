@@ -46,7 +46,11 @@ void PreferencesDialog::buildUi() {
         PreferencesPage* page = nullptr;
         switch (i) {
             case 0: page = new PrefAudioEnginePage(m_stack); break;
-            case 1: page = new PrefGridLayoutPage(m_stack); break;
+            case 1: {
+                m_gridPage = new PrefGridLayoutPage(m_stack);
+                page = m_gridPage;
+                break;
+            }
             case 2: page = new PrefWaveformCachePage(m_stack); break;
             case 3: page = new PrefFileHandlingPage(m_stack); break;
             case 4: page = new PrefKeyboardShortcutsPage(m_stack); break;
@@ -119,6 +123,11 @@ void PreferencesDialog::connectSignals() {
             if (page) page->reset();
         }
     });
+
+    // Notify main window when grid dimensions change
+    if (m_gridPage && m_mainWindow) {
+        connect(m_gridPage, &PrefGridLayoutPage::dimensionsChanged, m_mainWindow, &MainWindow::onGridDimensionsChanged);
+    }
 }
 
 QStringList PreferencesDialog::categoryNames() const {

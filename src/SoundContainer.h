@@ -22,7 +22,7 @@ class SoundContainer : public QFrame
     Q_OBJECT
 public:
     explicit SoundContainer(QWidget* parent = nullptr);
-    ~SoundContainer() override = default;
+    ~SoundContainer() override;
 
     // Test helper: apply a precomputed WaveformResult as if a job completed.
     // This avoids needing to run the background worker in unit tests.

@@ -59,6 +59,12 @@ public:
     QString cacheDirectory() const;
     void setCacheDirectory(const QString& path);
 
+    // Phase 5: Grid layout dimensions
+    int gridRows() const;                 // default 4, range [2,8]
+    int gridCols() const;                 // default 8, range [4,16]
+    void setGridRows(int rows);
+    void setGridCols(int cols);
+
 private:
     PreferencesManager();
     ~PreferencesManager();

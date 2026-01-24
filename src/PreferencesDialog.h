@@ -6,6 +6,7 @@ class QTreeWidget;
 class QStackedWidget;
 class QPushButton;
 class MainWindow;
+class PrefGridLayoutPage;
 
 class PreferencesDialog : public QDialog {
     Q_OBJECT
@@ -20,6 +21,7 @@ private:
     void connectSignals();
 
     MainWindow* m_mainWindow = nullptr;
+    PrefGridLayoutPage* m_gridPage = nullptr;
     QTreeWidget* m_tree = nullptr;
     QStackedWidget* m_stack = nullptr;
     QPushButton* m_btnSave = nullptr;

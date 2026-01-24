@@ -171,6 +171,33 @@ bool PreferencesManager::keepAliveAutoConnectInput() const {
 void PreferencesManager::setKeepAliveAutoConnectInput(bool enabled) {
     m_settings.setValue("keepalive/autoConnectInput", enabled);
 }
+
+int PreferencesManager::gridRows() const {
+    int v = m_settings.value("grid/rows", 4).toInt();
+    if (v < 2) v = 2;
+    if (v > 8) v = 8;
+    return v;
+}
+
+int PreferencesManager::gridCols() const {
+    int v = m_settings.value("grid/cols", 8).toInt();
+    if (v < 4) v = 4;
+    if (v > 16) v = 16;
+    return v;
+}
+
+void PreferencesManager::setGridRows(int rows) {
+    if (rows < 2) rows = 2;
+    if (rows > 8) rows = 8;
+    m_settings.setValue("grid/rows", rows);
+}
+
+void PreferencesManager::setGridCols(int cols) {
+    if (cols < 4) cols = 4;
+    if (cols > 16) cols = 16;
+    m_settings.setValue("grid/cols", cols);
+}
+
 // Phase 4: File/Path preferences
 bool PreferencesManager::validatePath(const QString& path) const {
     QDir d(path);

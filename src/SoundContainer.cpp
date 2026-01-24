@@ -167,6 +167,19 @@ SoundContainer::SoundContainer(QWidget* parent)
     resetToDefaultAppearance();
 }
 
+SoundContainer::~SoundContainer()
+{
+    // Cancel any pending waveform job
+    if (m_waveWorker && !m_pendingJobId.isNull()) {
+        m_waveWorker->cancelJob(m_pendingJobId);
+        m_pendingJobId = QUuid();
+    }
+    // Unregister from playhead manager to avoid dangling pointers during deletion
+    if (!m_filePath.isEmpty()) {
+        PlayheadManager::instance()->unregisterContainer(m_filePath, this);
+    }
+}
+
 // Worker signal handlers
 void SoundContainer::onWaveformReady(const WaveformJob& job, const WaveformResult& result)
 {

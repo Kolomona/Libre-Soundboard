@@ -110,13 +110,13 @@ LibreSoundboard has 10 key user-configurable preferences currently hardcoded or 
 **Goals:** Allow users to customize rows/columns per tab
 
 **Tasks:**
-- [ ] Implement GridLayout preferences page with spinboxes: Rows (2-8), Columns (4-16)
-- [ ] Add applySetting callback to PreferencesDialog that notifies MainWindow of grid changes
-- [ ] MainWindow::onGridDimensionsChanged() reconstructs tabs with new grid layout
-- [ ] Preserve sound data during reconstruction (create mapping of old → new positions)
-- [ ] Default is 4 rows × 8 columns
-- [ ] Reset uses default 4×8
-- [ ] Build succeeds
+- [x] Implement GridLayout preferences page with spinboxes: Rows (2-8), Columns (4-16)
+- [x] Add applySetting callback to PreferencesDialog that notifies MainWindow of grid changes
+- [x] MainWindow::onGridDimensionsChanged() reconstructs tabs with new grid layout
+- [x] Preserve sound data during reconstruction (create mapping of old → new positions)
+- [x] Default is 4 rows × 8 columns
+- [x] Reset uses default 4×8
+- [x] Build succeeds
 
 **Notes:** Grid reconstruction is complex; use signal/slot between PreferencesDialog and MainWindow. Warn user that sound assignments may shift position during reconstruction.
 

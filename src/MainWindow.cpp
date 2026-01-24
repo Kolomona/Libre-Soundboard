@@ -47,6 +47,7 @@
 #include <QFile>
 #include <QCoreApplication>
 #include <unistd.h>
+#include <algorithm>
 
 
 MainWindow::MainWindow(QWidget* parent)
@@ -140,8 +141,8 @@ MainWindow::MainWindow(QWidget* parent)
     // Use a custom tab bar that provides a ghost pixmap during drag and an animation when tabs move
     m_tabs->setTabBarPublic(new CustomTabBar(m_tabs));
     const int tabCount = 4;
-    const int rows = 4;
-    const int cols = 8;
+    m_gridRows = PreferencesManager::instance().gridRows();
+    m_gridCols = PreferencesManager::instance().gridCols();
     m_containers.resize(tabCount);
 
     for (int t = 0; t < tabCount; ++t) {
@@ -152,18 +153,18 @@ MainWindow::MainWindow(QWidget* parent)
         // receives an equal share of available width/height when the
         // main window is resized. Also allow columns to shrink to zero
         // minimum so the grid can fit smaller displays.
-        for (int cc = 0; cc < cols; ++cc) {
+        for (int cc = 0; cc < m_gridCols; ++cc) {
             layout->setColumnStretch(cc, 1);
             layout->setColumnMinimumWidth(cc, 0);
         }
-        for (int rr = 0; rr < rows; ++rr) {
+        for (int rr = 0; rr < m_gridRows; ++rr) {
             layout->setRowStretch(rr, 1);
             layout->setRowMinimumHeight(rr, 0);
         }
 
-        m_containers[t].reserve(rows * cols);
-        for (int r = 0; r < rows; ++r) {
-            for (int c = 0; c < cols; ++c) {
+        m_containers[t].reserve(m_gridRows * m_gridCols);
+        for (int r = 0; r < m_gridRows; ++r) {
+            for (int c = 0; c < m_gridCols; ++c) {
                 auto* sc = new SoundContainer(tab);
                 // Let each SoundContainer expand so the grid fills the window
                 // and keeps equal widths across columns. Also clear any
@@ -406,7 +407,8 @@ void MainWindow::syncContainersWithUi()
         QGridLayout* layout = qobject_cast<QGridLayout*>(tabWidget->layout());
         if (!layout) continue;
         // Collect widgets by row/col order. Assume same rows/cols used when building.
-        int rows = 4, cols = 8; // keep in sync with creation
+        int rows = m_gridRows;
+        int cols = m_gridCols;
         m_containers[t].reserve(rows * cols);
         for (int r = 0; r < rows; ++r) {
             for (int c = 0; c < cols; ++c) {
@@ -436,7 +438,7 @@ void MainWindow::resizeEvent(QResizeEvent* event)
     if (!page) return;
     QLayout* l = page->layout();
     if (!l) return;
-    const int cols = 8; // keep in sync with creation code
+    const int cols = m_gridCols;
     int spacing = l->spacing();
     QMargins mg = l->contentsMargins();
     int avail = page->width() - mg.left() - mg.right();
@@ -590,6 +592,152 @@ void MainWindow::playTestSound(float overrideVolume, int targetTab, int targetSl
     }
 }
 
+SoundContainer* MainWindow::containerAt(int tab, int index) const
+{
+    if (tab < 0 || tab >= static_cast<int>(m_containers.size())) return nullptr;
+    const auto& vec = m_containers[tab];
+    if (index < 0 || index >= static_cast<int>(vec.size())) return nullptr;
+    return vec[index];
+}
+
+int MainWindow::containerCountForTab(int tab) const
+{
+    if (tab < 0 || tab >= static_cast<int>(m_containers.size())) return 0;
+    return static_cast<int>(m_containers[tab].size());
+}
+
+void MainWindow::onGridDimensionsChanged(int rows, int cols)
+{
+    int newRows = std::clamp(rows, 2, 8);
+    int newCols = std::clamp(cols, 4, 16);
+    if (newRows == m_gridRows && newCols == m_gridCols) return;
+    // Pause/clear playhead overlays to avoid updates during rebuild
+    PlayheadManager::instance()->stopAll();
+
+    // Snapshot current grid contents
+    struct SlotData {
+        QString file;
+        float volume = 1.0f;
+        QColor backdrop;
+    };
+    std::vector<std::vector<SlotData>> oldData(m_containers.size());
+    for (size_t t = 0; t < m_containers.size(); ++t) {
+        auto& tabVec = m_containers[t];
+        oldData[t].reserve(tabVec.size());
+        for (auto* sc : tabVec) {
+            SlotData d;
+            if (sc) {
+                d.file = sc->file();
+                d.volume = sc->volume();
+                d.backdrop = sc->backdropColor();
+            }
+            oldData[t].push_back(d);
+        }
+    }
+
+    // Clear undo/redo stacks because indices are invalidated
+    m_undoStack.clear();
+    m_redoStack.clear();
+    if (m_undoAction) m_undoAction->setEnabled(false);
+    if (m_redoAction) m_redoAction->setEnabled(false);
+
+    // Rebuild grids per tab
+    for (int t = 0; t < m_tabs->count(); ++t) {
+        QWidget* tab = m_tabs->widget(t);
+        if (!tab) continue;
+        QGridLayout* layout = qobject_cast<QGridLayout*>(tab->layout());
+        if (layout) {
+            // Unregister all containers from playhead manager before deletion to prevent dangling pointers
+            if (t >= 0 && t < (int)m_containers.size()) {
+                for (auto* sc : m_containers[t]) {
+                    if (sc && !sc->file().isEmpty()) {
+                        PlayheadManager::instance()->unregisterContainer(sc->file(), sc);
+                    }
+                }
+            }
+            while (QLayoutItem* item = layout->takeAt(0)) {
+                if (item->widget()) {
+                    item->widget()->deleteLater();
+                }
+                delete item;
+            }
+            delete layout;
+        }
+
+        auto* newLayout = new QGridLayout(tab);
+        newLayout->setSpacing(8);
+        for (int cc = 0; cc < newCols; ++cc) {
+            newLayout->setColumnStretch(cc, 1);
+            newLayout->setColumnMinimumWidth(cc, 0);
+        }
+        for (int rr = 0; rr < newRows; ++rr) {
+            newLayout->setRowStretch(rr, 1);
+            newLayout->setRowMinimumHeight(rr, 0);
+        }
+        // Install the new layout on the tab widget to keep layout queries and geometry consistent
+        tab->setLayout(newLayout);
+
+        std::vector<SoundContainer*> tabContainers;
+        tabContainers.reserve(newRows * newCols);
+
+        auto attachContainer = [this](SoundContainer* sc) {
+            connect(sc, &SoundContainer::playRequested, this, &MainWindow::onPlayRequested);
+            connect(sc, &SoundContainer::swapRequested, this, &MainWindow::onSwapRequested);
+            connect(sc, &SoundContainer::copyRequested, this, &MainWindow::onCopyRequested);
+            connect(sc, &SoundContainer::fileChanged, this, [this](const QString& p){ statusBar()->showMessage(p, 2000); });
+            connect(sc, &SoundContainer::clearRequested, this, &MainWindow::onClearRequested);
+            connect(sc, &SoundContainer::volumeChanged, this, [this, sc](float v){
+                if (sc && !sc->file().isEmpty()) {
+                    m_audioEngine.setVoiceGainById(sc->file().toStdString(), v);
+                }
+            });
+            // Right-click on play button stops the audio for this container
+            connect(sc, &SoundContainer::stopRequested, this, [this](const QString& path, SoundContainer* sc){
+                Q_UNUSED(sc);
+                if (!path.isEmpty()) {
+                    m_audioEngine.stopVoicesById(path.toStdString());
+                    // notify playhead manager that playback stopped (for simulated case)
+                    PlayheadManager::instance()->playbackStopped(path, sc);
+                    statusBar()->showMessage(tr("Stopped: %1").arg(path), 1000);
+                }
+            });
+        };
+
+        int oldCount = static_cast<int>(oldData[t].size());
+        int newCount = newRows * newCols;
+        int copyCount = std::min(oldCount, newCount);
+
+        for (int idx = 0; idx < newCount; ++idx) {
+            int r = idx / newCols;
+            int c = idx % newCols;
+            auto* sc = new SoundContainer(tab);
+            sc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+            sc->setMinimumWidth(0);
+            sc->setMinimumHeight(0);
+            sc->setVolume(static_cast<float>(PreferencesManager::instance().defaultGain()));
+            newLayout->addWidget(sc, r, c);
+            attachContainer(sc);
+            tabContainers.push_back(sc);
+
+            if (idx < copyCount) {
+                const SlotData& d = oldData[t][idx];
+                if (!d.file.isEmpty()) {
+                    sc->setFile(d.file);
+                }
+                sc->setVolume(d.volume);
+                if (d.backdrop.isValid()) {
+                    sc->setBackdropColor(d.backdrop);
+                }
+            }
+        }
+
+        m_containers[t] = std::move(tabContainers);
+    }
+
+    m_gridRows = newRows;
+    m_gridCols = newCols;
+}
+
 void MainWindow::onSwapRequested(SoundContainer* src, SoundContainer* dst)
 {
     if (!src || !dst) return;
@@ -604,7 +752,7 @@ void MainWindow::onSwapRequested(SoundContainer* src, SoundContainer* dst)
         QGridLayout* layout = qobject_cast<QGridLayout*>(page->layout());
         if (!layout) { return {tabIndex, -1}; }
         // find item's position
-        int rows = 4, cols = 8;
+        int rows = m_gridRows, cols = m_gridCols;
         for (int r = 0; r < rows; ++r) {
             for (int c = 0; c < cols; ++c) {
                 QLayoutItem* it = layout->itemAtPosition(r, c);
@@ -631,7 +779,7 @@ void MainWindow::onSwapRequested(SoundContainer* src, SoundContainer* dst)
     QGridLayout* sLayout = sPage ? qobject_cast<QGridLayout*>(sPage->layout()) : nullptr;
     QGridLayout* dLayout = dPage ? qobject_cast<QGridLayout*>(dPage->layout()) : nullptr;
 
-    const int cols = 8;
+    const int cols = m_gridCols;
     int sR = srcIdx / cols, sC = srcIdx % cols;
     int dR = dstIdx / cols, dC = dstIdx % cols;
 
@@ -674,7 +822,7 @@ void MainWindow::onCopyRequested(SoundContainer* src, SoundContainer* dst)
         if (tabIndex < 0) return {-1,-1};
         QGridLayout* layout = qobject_cast<QGridLayout*>(page->layout());
         if (!layout) return {tabIndex, -1};
-        int rows = 4, cols = 8;
+        int rows = m_gridRows, cols = m_gridCols;
         for (int r = 0; r < rows; ++r) {
             for (int c = 0; c < cols; ++c) {
                 QLayoutItem* it = layout->itemAtPosition(r, c);
@@ -734,7 +882,7 @@ void MainWindow::onClearRequested(SoundContainer* sc)
         if (tabIndex < 0) return {-1,-1};
         QGridLayout* layout = qobject_cast<QGridLayout*>(page->layout());
         if (!layout) return {tabIndex, -1};
-        int rows = 4, cols = 8;
+        int rows = m_gridRows, cols = m_gridCols;
         for (int r = 0; r < rows; ++r) {
             for (int c = 0; c < cols; ++c) {
                 QLayoutItem* it = layout->itemAtPosition(r, c);
@@ -1008,7 +1156,7 @@ void MainWindow::undoSwap(const Operation& op)
     if (tabWidget) {
         QGridLayout* layout = qobject_cast<QGridLayout*>(tabWidget->layout());
         if (layout) {
-            int cols = 8;
+            int cols = m_gridCols;
             int rs = s / cols; int cs = s % cols;
             int rd = d / cols; int cd = d % cols;
             layout->addWidget(m_containers[op.tab][s], rs, cs);
@@ -1099,7 +1247,7 @@ void MainWindow::redoSwap(const Operation& op)
     if (tabWidget) {
         QGridLayout* layout = qobject_cast<QGridLayout*>(tabWidget->layout());
         if (layout) {
-            int cols = 8;
+            int cols = m_gridCols;
             int rs = s / cols; int cs = s % cols;
             int rd = d / cols; int cd = d % cols;
             layout->addWidget(m_containers[op.tab][s], rs, cs);

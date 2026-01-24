@@ -38,6 +38,15 @@ public slots:
     KeepAliveMonitor* getKeepAliveMonitor() const;
     AudioEngine* getAudioEngine();
 
+    // Grid layout preferences
+    int gridRows() const { return m_gridRows; }
+    int gridCols() const { return m_gridCols; }
+    SoundContainer* containerAt(int tab, int index) const;
+    int containerCountForTab(int tab) const;
+
+public slots:
+    void onGridDimensionsChanged(int rows, int cols);
+
     // Public method for preferences dialog to test audio playback
     // Parameters: overrideVolume, targetTab, targetSlot, isSpecificSlot, useSlotVolume
     void playTestSound(float overrideVolume, int targetTab = 0, int targetSlot = 0, bool isSpecificSlot = false, bool useSlotVolume = true);
@@ -90,6 +99,8 @@ private:
 private:
     AudioEngine m_audioEngine;
     CustomTabWidget* m_tabs = nullptr;
+    int m_gridRows = 4;
+    int m_gridCols = 8;
     // containers[tabIndex][slotIndex]
     std::vector<std::vector<SoundContainer*>> m_containers;
     QString m_layoutPath;

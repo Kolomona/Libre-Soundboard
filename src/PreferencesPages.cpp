@@ -16,6 +16,50 @@
 
 // Implement the existing page classes with UI and apply/reset logic
 
+// Grid & Layout
+PrefGridLayoutPage::PrefGridLayoutPage(QWidget* parent)
+	: PreferencesPage(parent)
+{
+	auto* v = new QVBoxLayout(this);
+	auto* form = new QFormLayout();
+
+	m_rows = new QSpinBox(this);
+	m_rows->setObjectName("spinGridRows");
+	m_rows->setRange(2, 8);
+
+	m_cols = new QSpinBox(this);
+	m_cols->setObjectName("spinGridCols");
+	m_cols->setRange(4, 16);
+
+	form->addRow(tr("Rows"), m_rows);
+	form->addRow(tr("Columns"), m_cols);
+
+	v->addLayout(form);
+	v->addStretch();
+	setLayout(v);
+	reset();
+}
+
+void PrefGridLayoutPage::apply()
+{
+	auto& pm = PreferencesManager::instance();
+	int oldRows = pm.gridRows();
+	int oldCols = pm.gridCols();
+	int newRows = m_rows->value();
+	int newCols = m_cols->value();
+	pm.setGridRows(newRows);
+	pm.setGridCols(newCols);
+	if (newRows != oldRows || newCols != oldCols) {
+		emit dimensionsChanged(newRows, newCols);
+	}
+}
+
+void PrefGridLayoutPage::reset()
+{
+	m_rows->setValue(PreferencesManager::instance().gridRows());
+	m_cols->setValue(PreferencesManager::instance().gridCols());
+}
+
 // Waveform Cache
 PrefWaveformCachePage::PrefWaveformCachePage(QWidget* parent)
 	: PreferencesPage(parent)
