@@ -38,6 +38,7 @@
 #include "WaveformCache.h"
 #include "CustomTabBar.h"
 #include "CustomTabWidget.h"
+#include "PreferencesDialog.h"
 
 #include <QDateTime>
 #include <QFile>
@@ -93,7 +94,11 @@ MainWindow::MainWindow(QWidget* parent)
     if (m_undoAction) m_undoAction->setShortcut(QKeySequence("Ctrl+Z"));
     if (m_redoAction) m_redoAction->setShortcut(QKeySequence("Shift+Ctrl+Z"));
     editMenu->addSeparator();
-    editMenu->addAction(tr("Preferences"));
+    QAction* prefsAction = editMenu->addAction(tr("Preferences"));
+    QObject::connect(prefsAction, &QAction::triggered, this, [this]() {
+        PreferencesDialog dlg(this);
+        dlg.exec();
+    });
     // Initially disabled until a rename occurs
     if (m_undoAction) m_undoAction->setEnabled(false);
     if (m_redoAction) m_redoAction->setEnabled(false);

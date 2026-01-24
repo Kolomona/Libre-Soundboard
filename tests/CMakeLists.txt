@@ -69,3 +69,9 @@ add_executable(tests_audioengine_connections
 )
 target_link_libraries(tests_audioengine_connections PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Core)
 add_test(NAME audioengine_connections_tests COMMAND tests_audioengine_connections)
+
+add_executable(tests_preferences_dialog
+    ../tests/test_preferences_dialog.cpp
+)
+target_link_libraries(tests_preferences_dialog PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Core Qt6::Widgets Qt6::Gui)
+add_test(NAME preferences_dialog_tests COMMAND tests_preferences_dialog)

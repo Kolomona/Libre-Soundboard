@@ -9,13 +9,13 @@ LibreSoundboard has 10 key user-configurable preferences currently hardcoded or 
 **Goals:** Create foundation for all preferences (settings persistence, dialog structure, tree widget)
 
 **Tasks:**
-- [ ] Create `PreferencesManager` class to abstract QSettings and provide global access
-- [ ] Create `PreferencesDialog` with tree widget on left (empty categories), settings panel on right
-- [ ] Create page widget base class for individual preference pages
-- [ ] Wire Preferences menu action to open dialog
-- [ ] Ensure dialog has Cancel/Reset/Save buttons (non-functional reset for now)
-- [ ] Create category pages: AudioEngine, GridLayout, WaveformCache, FileHandling, KeyboardShortcuts, Startup, Debug, KeepAlive (all empty for now)
-- [ ] Verify CMakeLists.txt includes new files, build succeeds
+- [x] Create `PreferencesManager` class to abstract QSettings and provide global access
+- [x] Create `PreferencesDialog` with tree widget on left (empty categories), settings panel on right
+- [x] Create page widget base class for individual preference pages
+- [x] Wire Preferences menu action to open dialog
+- [x] Ensure dialog has Cancel/Reset/Save buttons (non-functional reset for now)
+- [x] Create category pages: AudioEngine, GridLayout, WaveformCache, FileHandling, KeyboardShortcuts, Startup, Debug, KeepAlive (all empty for now)
+- [x] Verify CMakeLists.txt includes new files, build succeeds
 
 **Notes:** Dialog should not apply settings on Cancel. Tree should show all categories but pages can be empty stubs.
 

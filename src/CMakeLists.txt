@@ -32,6 +32,13 @@ add_library(libresoundboard_core STATIC
     CustomTabWidget.h
     KeepAliveMonitor.cpp
     KeepAliveMonitor.h
+    PreferencesManager.cpp
+    PreferencesManager.h
+    PreferencesDialog.cpp
+    PreferencesDialog.h
+    PreferencesPage.h
+    PreferencesPages.cpp
+    PreferencesPages.h
 )
 
 # Qt
