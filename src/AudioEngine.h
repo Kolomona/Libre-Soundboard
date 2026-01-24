@@ -52,6 +52,7 @@ public:
     // KeepAliveMonitor integration
     void setKeepAliveMonitor(KeepAliveMonitor* monitor);
     KeepAliveMonitor* getKeepAliveMonitor() const;
+    void autoConnectInputPort();
 
     // Get input samples from JACK input port
     std::vector<float> getInputSamples() const;

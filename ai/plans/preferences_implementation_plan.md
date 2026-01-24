@@ -60,12 +60,12 @@ LibreSoundboard has 10 key user-configurable preferences currently hardcoded or 
 **Goals:** Add keep-alive settings page and wire to KeepAliveMonitor/MainWindow status
 
 **Tasks:**
-- [ ] Implement KeepAlive preferences page with: Enable toggle (default on), Silence timeout (seconds, default 60), Sensitivity threshold (dBFS slider/spinbox with “Any non-zero” option, default -60 dBFS)
-- [ ] Add trigger target selector: default = Last tab, last loaded sound; allow Specific slot (tab + slot); do not implement Specific tab
-- [ ] Add volume policy: use slot volume or override volume slider; include “Play test” button to audition with override volume
-- [ ] Add auto-connect keep-alive input option (JACK input auto-connect)
-- [ ] When keep-alive enabled, show status bar text "KeepAlive: Active"; hide when disabled
-- [ ] PreferencesManager persists keep-alive settings; Save/Reset/Cancel wiring; build succeeds
+- [x] Implement KeepAlive preferences page with: Enable toggle (default on), Silence timeout (seconds, default 60), Sensitivity threshold (dBFS slider/spinbox with “Any non-zero” option, default -60 dBFS)
+- [x] Add trigger target selector: default = Last tab, last loaded sound; allow Specific slot (tab + slot); do not implement Specific tab
+- [x] Add volume policy: use slot volume or override volume slider; include “Play test” button to audition with override volume
+- [x] Add auto-connect keep-alive input option (JACK input auto-connect)
+- [x] When keep-alive enabled, show status bar text "KeepAlive: Active"; hide when disabled
+- [x] PreferencesManager persists keep-alive settings; Save/Reset/Cancel wiring; build succeeds
 
 **Notes:** Keep defaults matching current behavior: enabled, 60s, -60 dBFS, target last tab/last sound, no cooldown, slot volume.
 

@@ -5,11 +5,12 @@
 class QTreeWidget;
 class QStackedWidget;
 class QPushButton;
+class MainWindow;
 
 class PreferencesDialog : public QDialog {
     Q_OBJECT
 public:
-    explicit PreferencesDialog(QWidget* parent = nullptr);
+    explicit PreferencesDialog(MainWindow* mainWindow = nullptr, QWidget* parent = nullptr);
     ~PreferencesDialog() override;
 
     QStringList categoryNames() const;
@@ -18,6 +19,7 @@ private:
     void buildUi();
     void connectSignals();
 
+    MainWindow* m_mainWindow = nullptr;
     QTreeWidget* m_tree = nullptr;
     QStackedWidget* m_stack = nullptr;
     QPushButton* m_btnSave = nullptr;

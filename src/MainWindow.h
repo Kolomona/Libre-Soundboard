@@ -11,6 +11,7 @@ class SoundContainer;
 class QKeyEvent;
 class QWidget;
 class KeepAliveMonitor;
+class QLabel;
 
 /**
  * Main application window. Contains the menu and central grid layout.
@@ -36,6 +37,10 @@ public slots:
     // KeepAliveMonitor integration accessors
     KeepAliveMonitor* getKeepAliveMonitor() const;
     AudioEngine* getAudioEngine();
+
+    // Public method for preferences dialog to test audio playback
+    // Parameters: overrideVolume, targetTab, targetSlot, isSpecificSlot, useSlotVolume
+    void playTestSound(float overrideVolume, int targetTab = 0, int targetSlot = 0, bool isSpecificSlot = false, bool useSlotVolume = true);
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
@@ -81,6 +86,7 @@ private:
     std::vector<Operation> m_redoStack;
     QAction* m_undoAction = nullptr;
     QAction* m_redoAction = nullptr;
+
 private:
     AudioEngine m_audioEngine;
     CustomTabWidget* m_tabs = nullptr;
@@ -88,6 +94,9 @@ private:
     std::vector<std::vector<SoundContainer*>> m_containers;
     QString m_layoutPath;
     KeepAliveMonitor* m_keepAliveMonitor = nullptr;
+    QLabel* m_keepAliveStatusLabel = nullptr;
+    void applyKeepAlivePreferences();
+    bool playAudioFile(const QString& path, SoundContainer* src, float volumeOverride, bool useOverrideVolume);
     
     void syncContainersWithUi();
     void writeDebugLog(const QString& msg);

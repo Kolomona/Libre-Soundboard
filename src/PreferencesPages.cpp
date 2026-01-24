@@ -6,6 +6,9 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QComboBox>
+#include <QCheckBox>
+#include <QPushButton>
+#include <QHBoxLayout>
 #include "DebugLog.h"
 
 // Implement the existing page classes with UI and apply/reset logic
@@ -101,4 +104,152 @@ void PrefDebugPage::reset()
 {
 	auto lvl = PreferencesManager::instance().logLevel();
 	m_level->setCurrentIndex(static_cast<int>(lvl));
+}
+
+// Keep-Alive
+PrefKeepAlivePage::PrefKeepAlivePage(QWidget* parent)
+	: PreferencesPage(parent)
+{
+	auto* v = new QVBoxLayout(this);
+	auto* form = new QFormLayout();
+
+	m_enable = new QCheckBox(tr("Enable"), this);
+	m_enable->setObjectName("chkKeepAliveEnable");
+	form->addRow(tr("Keep-Alive"), m_enable);
+
+	m_timeout = new QSpinBox(this);
+	m_timeout->setObjectName("spinKeepAliveTimeout");
+	m_timeout->setRange(1, 3600);
+	m_timeout->setSuffix(tr(" sec"));
+	form->addRow(tr("Silence Timeout"), m_timeout);
+
+	m_sensitivity = new QDoubleSpinBox(this);
+	m_sensitivity->setObjectName("spinKeepAliveSensitivity");
+	m_sensitivity->setRange(-120.0, 0.0);
+	m_sensitivity->setDecimals(1);
+	m_sensitivity->setSingleStep(1.0);
+	m_anyNonZero = new QCheckBox(tr("Any non-zero"), this);
+	m_anyNonZero->setObjectName("chkKeepAliveAnyNonZero");
+
+auto* sensRow = new QHBoxLayout();
+	sensRow->addWidget(m_sensitivity);
+	sensRow->addWidget(m_anyNonZero);
+	form->addRow(tr("Sensitivity (dBFS)"), sensRow);
+
+	m_target = new QComboBox(this);
+	m_target->setObjectName("comboKeepAliveTarget");
+	m_target->addItems({tr("Last tab, last sound"), tr("Specific slot")});
+	form->addRow(tr("Trigger Target"), m_target);
+
+	m_tabIndex = new QSpinBox(this);
+	m_tabIndex->setObjectName("spinKeepAliveTab");
+	m_tabIndex->setRange(1, 32);
+	m_slotIndex = new QSpinBox(this);
+	m_slotIndex->setObjectName("spinKeepAliveSlot");
+	m_slotIndex->setRange(1, 128);
+	auto* slotRow = new QHBoxLayout();
+	slotRow->addWidget(new QLabel(tr("Tab"), this));
+	slotRow->addWidget(m_tabIndex);
+	slotRow->addSpacing(8);
+	slotRow->addWidget(new QLabel(tr("Slot"), this));
+	slotRow->addWidget(m_slotIndex);
+	form->addRow(tr("Specific Slot"), slotRow);
+
+	m_useSlotVolume = new QCheckBox(tr("Use slot volume"), this);
+	m_useSlotVolume->setObjectName("chkKeepAliveUseSlotVolume");
+	m_overrideVolume = new QDoubleSpinBox(this);
+	m_overrideVolume->setObjectName("spinKeepAliveOverrideVolume");
+	m_overrideVolume->setRange(0.0, 1.0);
+	m_overrideVolume->setSingleStep(0.05);
+	m_overrideVolume->setDecimals(2);
+	auto* volRow = new QHBoxLayout();
+	volRow->addWidget(m_useSlotVolume);
+	volRow->addWidget(new QLabel(tr("Override"), this));
+	volRow->addWidget(m_overrideVolume);
+	form->addRow(tr("Volume Policy"), volRow);
+
+	m_autoConnect = new QCheckBox(tr("Auto-connect keep-alive input"), this);
+	m_autoConnect->setObjectName("chkKeepAliveAutoConnect");
+	form->addRow(tr("JACK Input"), m_autoConnect);
+
+	m_playTest = new QPushButton(tr("Play test"), this);
+	m_playTest->setObjectName("btnKeepAlivePlayTest");
+	form->addRow(QString(), m_playTest);
+
+	v->addLayout(form);
+	v->addStretch();
+	setLayout(v);
+
+	connect(m_anyNonZero, &QCheckBox::toggled, this, [this](){ updateSensitivityEnabled(); });
+	connect(m_target, static_cast<void(QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this, [this](int){ updateTargetControls(); });
+	connect(m_useSlotVolume, &QCheckBox::toggled, this, [this](){ updateVolumeControls(); });
+
+	// Wire play test button to callback (set by MainWindow if available)
+	connect(m_playTest, &QPushButton::clicked, this, [this]() {
+		if (m_playTestCallback) {
+			float overrideVol = static_cast<float>(m_overrideVolume->value());
+			bool useSlotVol = m_useSlotVolume->isChecked();
+			bool isSpecific = (m_target->currentIndex() == 1); // SpecificSlot = 1
+			// Convert from 1-indexed UI display to 0-indexed array indices
+			int targetTab = m_tabIndex->value() - 1;
+			int targetSlot = m_slotIndex->value() - 1;
+			m_playTestCallback(overrideVol, targetTab, targetSlot, isSpecific, useSlotVol);
+		}
+	});
+
+	reset();
+}
+
+void PrefKeepAlivePage::apply()
+{
+	auto& pm = PreferencesManager::instance();
+	pm.setKeepAliveEnabled(m_enable->isChecked());
+	pm.setKeepAliveTimeoutSeconds(m_timeout->value());
+	pm.setKeepAliveAnyNonZero(m_anyNonZero->isChecked());
+	pm.setKeepAliveSensitivityDbfs(m_sensitivity->value());
+	auto target = m_target->currentIndex() == 0 ? PreferencesManager::KeepAliveTarget::LastTabLastSound
+	                                          : PreferencesManager::KeepAliveTarget::SpecificSlot;
+	pm.setKeepAliveTarget(target);
+	pm.setKeepAliveTargetTab(m_tabIndex->value() - 1);
+	pm.setKeepAliveTargetSlot(m_slotIndex->value() - 1);
+	pm.setKeepAliveUseSlotVolume(m_useSlotVolume->isChecked());
+	pm.setKeepAliveOverrideVolume(m_overrideVolume->value());
+	pm.setKeepAliveAutoConnectInput(m_autoConnect->isChecked());
+}
+
+void PrefKeepAlivePage::reset()
+{
+	auto& pm = PreferencesManager::instance();
+	m_enable->setChecked(pm.keepAliveEnabled());
+	m_timeout->setValue(pm.keepAliveTimeoutSeconds());
+	m_sensitivity->setValue(pm.keepAliveSensitivityDbfs());
+	m_anyNonZero->setChecked(pm.keepAliveAnyNonZero());
+	m_target->setCurrentIndex(pm.keepAliveTarget() == PreferencesManager::KeepAliveTarget::LastTabLastSound ? 0 : 1);
+	m_tabIndex->setValue(pm.keepAliveTargetTab() + 1);
+	m_slotIndex->setValue(pm.keepAliveTargetSlot() + 1);
+	m_useSlotVolume->setChecked(pm.keepAliveUseSlotVolume());
+	m_overrideVolume->setValue(pm.keepAliveOverrideVolume());
+	m_autoConnect->setChecked(pm.keepAliveAutoConnectInput());
+
+	updateSensitivityEnabled();
+	updateTargetControls();
+	updateVolumeControls();
+}
+
+void PrefKeepAlivePage::updateSensitivityEnabled()
+{
+	m_sensitivity->setEnabled(!m_anyNonZero->isChecked());
+}
+
+void PrefKeepAlivePage::updateTargetControls()
+{
+	bool specific = (m_target->currentIndex() == 1);
+	m_tabIndex->setEnabled(specific);
+	m_slotIndex->setEnabled(specific);
+}
+
+void PrefKeepAlivePage::updateVolumeControls()
+{
+	// Override volume should be enabled only when NOT using slot volume
+	m_overrideVolume->setEnabled(!m_useSlotVolume->isChecked());
 }

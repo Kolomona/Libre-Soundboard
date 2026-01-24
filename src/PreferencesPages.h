@@ -1,9 +1,12 @@
 #pragma once
 #include "PreferencesPage.h"
+#include <functional>
 
 class QDoubleSpinBox;
 class QSpinBox;
 class QComboBox;
+class QCheckBox;
+class QPushButton;
 
 class PrefAudioEnginePage : public PreferencesPage {
     Q_OBJECT
@@ -63,5 +66,30 @@ private:
 class PrefKeepAlivePage : public PreferencesPage {
     Q_OBJECT
 public:
-    explicit PrefKeepAlivePage(QWidget* parent = nullptr) : PreferencesPage(parent) {}
+    explicit PrefKeepAlivePage(QWidget* parent = nullptr);
+    void apply() override;
+    void reset() override;
+
+    // Set callback for play test button to actually play sound
+    // Parameters: overrideVolume, targetTab, targetSlot, isSpecificSlot, useSlotVolume
+    using PlayTestCallback = std::function<void(float, int, int, bool, bool)>;
+    void setPlayTestCallback(PlayTestCallback callback) { m_playTestCallback = callback; }
+
+private:
+    void updateSensitivityEnabled();
+    void updateTargetControls();
+    void updateVolumeControls();
+
+    QCheckBox* m_enable = nullptr;
+    QSpinBox* m_timeout = nullptr;
+    QDoubleSpinBox* m_sensitivity = nullptr;
+    QCheckBox* m_anyNonZero = nullptr;
+    QComboBox* m_target = nullptr;
+    QSpinBox* m_tabIndex = nullptr;
+    QSpinBox* m_slotIndex = nullptr;
+    QCheckBox* m_useSlotVolume = nullptr;
+    QDoubleSpinBox* m_overrideVolume = nullptr;
+    QCheckBox* m_autoConnect = nullptr;
+    QPushButton* m_playTest = nullptr;
+    PlayTestCallback m_playTestCallback;
 };

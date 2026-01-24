@@ -67,3 +67,103 @@ PreferencesManager::LogLevel PreferencesManager::logLevel() const {
 void PreferencesManager::setLogLevel(PreferencesManager::LogLevel lvl) {
     m_settings.setValue("debug/logLevel", static_cast<int>(lvl));
 }
+
+bool PreferencesManager::keepAliveEnabled() const {
+    return m_settings.value("keepalive/enabled", true).toBool();
+}
+
+void PreferencesManager::setKeepAliveEnabled(bool enabled) {
+    m_settings.setValue("keepalive/enabled", enabled);
+}
+
+int PreferencesManager::keepAliveTimeoutSeconds() const {
+    int v = m_settings.value("keepalive/timeoutSeconds", 60).toInt();
+    if (v < 1) v = 1;
+    if (v > 3600) v = 3600;
+    return v;
+}
+
+void PreferencesManager::setKeepAliveTimeoutSeconds(int seconds) {
+    if (seconds < 1) seconds = 1;
+    if (seconds > 3600) seconds = 3600;
+    m_settings.setValue("keepalive/timeoutSeconds", seconds);
+}
+
+double PreferencesManager::keepAliveSensitivityDbfs() const {
+    return m_settings.value("keepalive/sensitivityDbfs", -60.0).toDouble();
+}
+
+void PreferencesManager::setKeepAliveSensitivityDbfs(double dbfs) {
+    if (dbfs > 0.0) dbfs = 0.0;
+    if (dbfs < -120.0) dbfs = -120.0;
+    m_settings.setValue("keepalive/sensitivityDbfs", dbfs);
+}
+
+bool PreferencesManager::keepAliveAnyNonZero() const {
+    return m_settings.value("keepalive/anyNonZero", false).toBool();
+}
+
+void PreferencesManager::setKeepAliveAnyNonZero(bool any) {
+    m_settings.setValue("keepalive/anyNonZero", any);
+}
+
+PreferencesManager::KeepAliveTarget PreferencesManager::keepAliveTarget() const {
+    int v = m_settings.value("keepalive/target", 0).toInt();
+    if (v < 0) v = 0; if (v > 1) v = 1;
+    return static_cast<KeepAliveTarget>(v);
+}
+
+void PreferencesManager::setKeepAliveTarget(PreferencesManager::KeepAliveTarget t) {
+    m_settings.setValue("keepalive/target", static_cast<int>(t));
+}
+
+int PreferencesManager::keepAliveTargetTab() const {
+    int v = m_settings.value("keepalive/targetTab", 0).toInt();
+    if (v < 0) v = 0;
+    return v;
+}
+
+void PreferencesManager::setKeepAliveTargetTab(int tab) {
+    if (tab < 0) tab = 0;
+    m_settings.setValue("keepalive/targetTab", tab);
+}
+
+int PreferencesManager::keepAliveTargetSlot() const {
+    int v = m_settings.value("keepalive/targetSlot", 0).toInt();
+    if (v < 0) v = 0;
+    return v;
+}
+
+void PreferencesManager::setKeepAliveTargetSlot(int slot) {
+    if (slot < 0) slot = 0;
+    m_settings.setValue("keepalive/targetSlot", slot);
+}
+
+bool PreferencesManager::keepAliveUseSlotVolume() const {
+    return m_settings.value("keepalive/useSlotVolume", true).toBool();
+}
+
+void PreferencesManager::setKeepAliveUseSlotVolume(bool useSlotVolume) {
+    m_settings.setValue("keepalive/useSlotVolume", useSlotVolume);
+}
+
+double PreferencesManager::keepAliveOverrideVolume() const {
+    double v = m_settings.value("keepalive/overrideVolume", 1.0).toDouble();
+    if (v < 0.0) v = 0.0;
+    if (v > 1.0) v = 1.0;
+    return v;
+}
+
+void PreferencesManager::setKeepAliveOverrideVolume(double vol) {
+    if (vol < 0.0) vol = 0.0;
+    if (vol > 1.0) vol = 1.0;
+    m_settings.setValue("keepalive/overrideVolume", vol);
+}
+
+bool PreferencesManager::keepAliveAutoConnectInput() const {
+    return m_settings.value("keepalive/autoConnectInput", true).toBool();
+}
+
+void PreferencesManager::setKeepAliveAutoConnectInput(bool enabled) {
+    m_settings.setValue("keepalive/autoConnectInput", enabled);
+}

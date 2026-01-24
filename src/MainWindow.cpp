@@ -18,6 +18,7 @@
 #include <QTabBar>
 #include <QStandardPaths>
 #include <QDir>
+#include <cmath>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -102,7 +103,11 @@ MainWindow::MainWindow(QWidget* parent)
     QAction* prefsAction = editMenu->addAction(tr("Preferences"));
     QObject::connect(prefsAction, &QAction::triggered, this, [this]() {
         PreferencesDialog dlg(this);
-        dlg.exec();
+        if (dlg.exec() == QDialog::Accepted) {
+            // Apply preferences immediately after save
+            DebugLog::setLevel(static_cast<int>(PreferencesManager::instance().logLevel()));
+            applyKeepAlivePreferences();
+        }
     });
     // Initially disabled until a rename occurs
     if (m_undoAction) m_undoAction->setEnabled(false);
@@ -122,6 +127,12 @@ MainWindow::MainWindow(QWidget* parent)
         WaveformCache::evict();
         statusBar()->showMessage(tr("Waveform cache eviction complete"), 2000);
     });
+
+    // Keep-alive status indicator pinned to the status bar
+    m_keepAliveStatusLabel = new QLabel(this);
+    m_keepAliveStatusLabel->setObjectName("keepAliveStatusLabel");
+    m_keepAliveStatusLabel->setVisible(false);
+    statusBar()->addPermanentWidget(m_keepAliveStatusLabel);
 
     // Create tabs, each with 32 SoundContainers (4 rows x 8 cols)
     #include "CustomTabBar.h"
@@ -250,6 +261,7 @@ MainWindow::MainWindow(QWidget* parent)
     
     // Initialize KeepAliveMonitor for input monitoring
     initializeKeepAliveMonitor();
+    applyKeepAlivePreferences();
     
     // Emit a startup debug line so we can confirm the debug logger is being invoked
     writeDebugLog(QString("MainWindow constructed pid=%1").arg(getpid()));
@@ -456,28 +468,125 @@ MainWindow::~MainWindow()
 
 void MainWindow::onPlayRequested(const QString& path, SoundContainer* src)
 {
+    playAudioFile(path, src, 1.0f, false);
+}
+
+bool MainWindow::playAudioFile(const QString& path, SoundContainer* src, float volumeOverride, bool useOverrideVolume)
+{
     AudioFile af;
     if (!af.load(path)) {
         QMessageBox::warning(this, tr("Load Failed"), tr("Unable to load audio file."));
-        return;
+        return false;
     }
 
     std::vector<float> samples;
     int sr = 0, ch = 0;
     if (!af.readAllSamples(samples, sr, ch)) {
         QMessageBox::warning(this, tr("Read Failed"), tr("Unable to decode audio file."));
-        return;
+        return false;
     }
 
-    // Use the file path as the voice id so repeated presses restart that sound
     float vol = 1.0f;
-    if (src) vol = src->volume();
-    // notify playhead manager that playback started (simulated fallback)
+    if (useOverrideVolume) {
+        vol = volumeOverride;
+    } else if (src) {
+        vol = src->volume();
+    }
+
     PlayheadManager::instance()->playbackStarted(path, src);
     if (!m_audioEngine.playBuffer(samples, sr, ch, path.toStdString(), vol)) {
         statusBar()->showMessage(tr("Playback failed (JACK?)"), 3000);
+        return false;
+    }
+
+    statusBar()->showMessage(tr("Playing: %1").arg(path), 2000);
+    return true;
+}
+
+void MainWindow::playTestSound(float overrideVolume, int targetTab, int targetSlot, bool isSpecificSlot, bool useSlotVolume)
+{
+    writeDebugLog(QString("playTestSound: overrideVol=%1, targetTab=%2, targetSlot=%3, isSpecific=%4, useSlotVol=%5")
+        .arg(overrideVolume).arg(targetTab).arg(targetSlot).arg(isSpecificSlot).arg(useSlotVolume));
+    
+    QString filePath;
+    SoundContainer* targetContainer = nullptr;
+
+    // Determine which container is the trigger target
+    if (!isSpecificSlot) {
+        // Find the current tab (or last active tab) and look for a sound in it
+        int tabIndex = m_tabs ? m_tabs->currentIndex() : -1;
+        if (tabIndex >= 0 && tabIndex < static_cast<int>(m_containers.size())) {
+            auto& tabContainers = m_containers[tabIndex];
+            // Find the last non-empty container in this tab
+            for (int i = static_cast<int>(tabContainers.size()) - 1; i >= 0; --i) {
+                if (tabContainers[i] && !tabContainers[i]->file().isEmpty()) {
+                    filePath = tabContainers[i]->file();
+                    targetContainer = tabContainers[i];
+                    break;
+                }
+            }
+        }
     } else {
-        statusBar()->showMessage(tr("Playing: %1").arg(path), 2000);
+        // Specific slot target from preferences UI
+        if (targetTab >= 0 && targetTab < static_cast<int>(m_containers.size()) &&
+            targetSlot >= 0 && targetSlot < static_cast<int>(m_containers[targetTab].size()) &&
+            m_containers[targetTab][targetSlot]) {
+            targetContainer = m_containers[targetTab][targetSlot];
+            filePath = targetContainer->file();
+            // If container exists but has no file, also check this
+            if (!filePath.isEmpty()) {
+                // We have a valid file
+            } else {
+                // Container exists but no file loaded
+                writeDebugLog(QString("Play test: Container [%1,%2] has no file loaded").arg(targetTab).arg(targetSlot));
+            }
+        } else {
+            // Container doesn't exist or invalid indices
+            writeDebugLog(QString("Play test: Invalid container access [%1,%2] (max containers: %3x%4)")
+                .arg(targetTab).arg(targetSlot)
+                .arg(m_containers.size())
+                .arg(m_containers.size() > static_cast<size_t>(targetTab) ? m_containers[targetTab].size() : 0));
+        }
+    }
+
+    // Determine the volume to use based on policy
+    float playbackVolume;
+    if (!useSlotVolume) {
+        // Use the override volume when NOT using slot volume
+        playbackVolume = overrideVolume;
+        writeDebugLog(QString("Volume policy: NOT using slot volume, using override: %1").arg(playbackVolume));
+    } else if (targetContainer) {
+        // Use the target container's actual volume when using slot volume
+        playbackVolume = targetContainer->volume();
+        writeDebugLog(QString("Volume policy: using slot volume from container: %1").arg(playbackVolume));
+    } else {
+        // Fallback: no target container, use override as default
+        playbackVolume = overrideVolume;
+        writeDebugLog(QString("Volume policy: no container found, using override fallback: %1").arg(playbackVolume));
+    }
+
+    // If we have a file, try to play it; otherwise play test tone
+    if (!filePath.isEmpty()) {
+        playAudioFile(filePath, nullptr, playbackVolume, true);
+    } else {
+        // Play test tone as fallback when no sound is loaded at trigger target
+        const int sampleRate = 44100;
+        const int numSamples = sampleRate; // 1 second
+        const float frequency = 440.0f; // A4
+        std::vector<float> testTone(numSamples);
+
+        for (int i = 0; i < numSamples; ++i) {
+            float t = static_cast<float>(i) / sampleRate;
+            testTone[i] = std::sin(2.0f * 3.14159265f * frequency * t);
+        }
+
+        PlayheadManager::instance()->playbackStarted("<test tone>", nullptr);
+        if (!m_audioEngine.playBuffer(testTone, sampleRate, 1, "test_tone", playbackVolume)) {
+            statusBar()->showMessage(tr("Test playback failed (JACK?)"), 3000);
+            return;
+        }
+
+        statusBar()->showMessage(tr("Test tone: %1").arg(playbackVolume), 2000);
     }
 }
 
@@ -1035,6 +1144,33 @@ void MainWindow::initializeKeepAliveMonitor()
     writeDebugLog("KeepAliveMonitor initialized");
 }
 
+void MainWindow::applyKeepAlivePreferences()
+{
+    PreferencesManager& pm = PreferencesManager::instance();
+
+    if (m_keepAliveMonitor) {
+        m_keepAliveMonitor->setEnabled(pm.keepAliveEnabled());
+        m_keepAliveMonitor->setSilenceTimeoutMs(static_cast<qint64>(pm.keepAliveTimeoutSeconds()) * 1000);
+        if (pm.keepAliveAnyNonZero()) {
+            m_keepAliveMonitor->setSensitivityDbfsDisabled();
+        } else {
+            m_keepAliveMonitor->setSensitivityDbfs(pm.keepAliveSensitivityDbfs());
+        }
+        if (pm.keepAliveEnabled()) {
+            m_keepAliveMonitor->resetSilenceTimer();
+        }
+    }
+
+    if (m_keepAliveStatusLabel) {
+        m_keepAliveStatusLabel->setText(tr("KeepAlive: Active"));
+        m_keepAliveStatusLabel->setVisible(pm.keepAliveEnabled());
+    }
+
+    if (pm.keepAliveAutoConnectInput()) {
+        m_audioEngine.autoConnectInputPort();
+    }
+}
+
 KeepAliveMonitor* MainWindow::getKeepAliveMonitor() const
 {
     return m_keepAliveMonitor;
@@ -1047,44 +1183,54 @@ AudioEngine* MainWindow::getAudioEngine()
 
 void MainWindow::onKeepAliveTriggered()
 {
+    PreferencesManager& pm = PreferencesManager::instance();
+    if (!pm.keepAliveEnabled()) {
+        writeDebugLog("onKeepAliveTriggered: Disabled; ignoring");
+        return;
+    }
+
     writeDebugLog("onKeepAliveTriggered: Keep-alive triggered");
-    
-    // Find the last tab (highest index)
-    if (!m_tabs || m_tabs->count() == 0) {
-        writeDebugLog("onKeepAliveTriggered: No tabs available");
-        return;
-    }
-    
-    int lastTabIndex = m_tabs->count() - 1;
-    
-    // Find the last sound container with a file in the last tab
-    if (lastTabIndex < 0 || lastTabIndex >= (int)m_containers.size()) {
-        writeDebugLog("onKeepAliveTriggered: Last tab index out of range");
-        return;
-    }
-    
-    auto& lastTabContainers = m_containers[lastTabIndex];
-    
-    // Search from the end backwards to find the last non-empty container
-    SoundContainer* lastContainer = nullptr;
-    for (auto it = lastTabContainers.rbegin(); it != lastTabContainers.rend(); ++it) {
-        if (*it && !(*it)->file().isEmpty()) {
-            lastContainer = *it;
-            break;
+
+    SoundContainer* target = nullptr;
+
+    // Preferred target from preferences
+    if (pm.keepAliveTarget() == PreferencesManager::KeepAliveTarget::SpecificSlot) {
+        int tabIdx = pm.keepAliveTargetTab();
+        int slotIdx = pm.keepAliveTargetSlot();
+        if (tabIdx >= 0 && tabIdx < m_tabs->count() && tabIdx < (int)m_containers.size()) {
+            auto& vec = m_containers[tabIdx];
+            if (slotIdx >= 0 && slotIdx < (int)vec.size()) {
+                target = vec[slotIdx];
+            }
         }
     }
-    
-    if (!lastContainer) {
-        writeDebugLog("onKeepAliveTriggered: No loaded sounds in last tab");
+
+    // Fallback to last tab / last loaded sound
+    if (!target) {
+        if (!m_tabs || m_tabs->count() == 0) {
+            writeDebugLog("onKeepAliveTriggered: No tabs available");
+            return;
+        }
+        int lastTabIndex = m_tabs->count() - 1;
+        if (lastTabIndex < 0 || lastTabIndex >= (int)m_containers.size()) {
+            writeDebugLog("onKeepAliveTriggered: Last tab index out of range");
+            return;
+        }
+        auto& lastTabContainers = m_containers[lastTabIndex];
+        for (auto it = lastTabContainers.rbegin(); it != lastTabContainers.rend(); ++it) {
+            if (*it && !(*it)->file().isEmpty()) {
+                target = *it;
+                break;
+            }
+        }
+    }
+
+    if (!target || target->file().isEmpty()) {
+        writeDebugLog("onKeepAliveTriggered: No loaded sounds available to play");
         return;
     }
-    
-    // Trigger playback of this sound
-    QString filePath = lastContainer->file();
-    float volume = lastContainer->volume();
-    
-    writeDebugLog(QString("onKeepAliveTriggered: Playing '%1' at volume %2").arg(filePath).arg(volume));
-    
-    // Use the playRequested signal to trigger playback
-    emit lastContainer->playRequested(filePath, lastContainer);
+
+    float volume = pm.keepAliveUseSlotVolume() ? target->volume() : static_cast<float>(pm.keepAliveOverrideVolume());
+    writeDebugLog(QString("onKeepAliveTriggered: Playing '%1' at volume %2").arg(target->file()).arg(volume));
+    playAudioFile(target->file(), target, volume, !pm.keepAliveUseSlotVolume());
 }

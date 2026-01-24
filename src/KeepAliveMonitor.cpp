@@ -1,11 +1,14 @@
 #include "KeepAliveMonitor.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 KeepAliveMonitor::KeepAliveMonitor(QObject* parent)
     : QObject(parent)
     , m_lastFrameHadSound(false)
     , m_hasTriggeredForSilencePeriod(false)
+    , m_silenceTimeoutMs(60 * 1000)
+    , m_enabled(true)
 {
     // Initialize silence timer
     m_timer.start();
@@ -18,6 +21,10 @@ KeepAliveMonitor::~KeepAliveMonitor() = default;
 
 void KeepAliveMonitor::processInputSamples(const std::vector<float>& samples, int numFrames, int numChannels)
 {
+    if (!m_enabled) {
+        m_lastFrameHadSound = false;
+        return;
+    }
     if (numFrames <= 0 || numChannels <= 0) {
         return;
     }
@@ -57,7 +64,7 @@ void KeepAliveMonitor::processInputSamples(const std::vector<float>& samples, in
         // Silence detected - check if we've reached the threshold
         qint64 elapsedMs = m_timer.elapsed();
 
-        if (elapsedMs >= SILENCE_TIMEOUT_MS && !m_hasTriggeredForSilencePeriod) {
+        if (elapsedMs >= m_silenceTimeoutMs && !m_hasTriggeredForSilencePeriod) {
             m_hasTriggeredForSilencePeriod = true;
             emit keepAliveTriggered();
             
@@ -79,6 +86,12 @@ void KeepAliveMonitor::resetSilenceTimer()
 {
     m_timer.restart();
     m_hasTriggeredForSilencePeriod = false;
+}
+
+void KeepAliveMonitor::setSilenceTimeoutMs(qint64 ms)
+{
+    if (ms < 1) ms = 1;
+    m_silenceTimeoutMs = ms;
 }
 
 bool KeepAliveMonitor::frameHasSound(const std::vector<float>& samples, int frameStart, int numChannels) const

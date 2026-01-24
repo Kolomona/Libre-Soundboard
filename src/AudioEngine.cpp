@@ -190,6 +190,17 @@ void AudioEngine::restoreConnections()
     }
 }
 
+void AudioEngine::autoConnectInputPort()
+{
+    if (!m_priv || !m_priv->client || !m_priv->in_port) return;
+    const char* inName = jack_port_name(m_priv->in_port);
+    if (!inName) return;
+
+    // Attempt to connect common system capture ports; ignore errors if JACK not present
+    jack_connect(m_priv->client, "system:capture_1", inName);
+    jack_connect(m_priv->client, "system:capture_2", inName);
+}
+
 bool AudioEngine::playBuffer(const std::vector<float>& samples, int sampleRate, int channels, const std::string& id, float gain)
 {
     if (!m_priv || !m_priv->client)

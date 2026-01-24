@@ -33,6 +33,14 @@ public:
     // Get current silence duration in seconds
     double silenceDuration() const;
 
+    // Configure silence timeout in milliseconds (defaults to 60s).
+    void setSilenceTimeoutMs(qint64 ms);
+    qint64 silenceTimeoutMs() const { return m_silenceTimeoutMs; }
+
+    // Enable or disable monitoring entirely
+    void setEnabled(bool enabled) { m_enabled = enabled; }
+    bool isEnabled() const { return m_enabled; }
+
     // Reset the silence timer manually
     void resetSilenceTimer();
 
@@ -57,8 +65,8 @@ private:
     // Detect if the given frame has any non-zero audio
     bool frameHasSound(const std::vector<float>& samples, int frameStart, int numChannels) const;
 
-    // Silence timeout in milliseconds (60 seconds)
-    static constexpr qint64 SILENCE_TIMEOUT_MS = 60 * 1000;
+    // Silence timeout in milliseconds
+    qint64 m_silenceTimeoutMs = 60 * 1000;
 
     // Track whether the last processed frame had sound
     bool m_lastFrameHadSound = false;
@@ -71,5 +79,8 @@ private:
 
     // Peak amplitude threshold in linear units [0,1]. 0.0 means disabled (legacy behavior).
     double m_thresholdAmplitude = 0.0;
+
+    // Whether monitoring is active
+    bool m_enabled = true;
 
 };

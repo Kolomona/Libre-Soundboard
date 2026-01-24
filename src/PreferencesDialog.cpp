@@ -9,9 +9,10 @@
 
 #include "PreferencesManager.h"
 #include "PreferencesPages.h"
+#include "MainWindow.h"
 
-PreferencesDialog::PreferencesDialog(QWidget* parent)
-    : QDialog(parent)
+PreferencesDialog::PreferencesDialog(MainWindow* mainWindow, QWidget* parent)
+    : QDialog(parent), m_mainWindow(mainWindow)
 {
     setWindowTitle(tr("Preferences"));
     buildUi();
@@ -51,7 +52,17 @@ void PreferencesDialog::buildUi() {
             case 4: page = new PrefKeyboardShortcutsPage(m_stack); break;
             case 5: page = new PrefStartupPage(m_stack); break;
             case 6: page = new PrefDebugPage(m_stack); break;
-            case 7: page = new PrefKeepAlivePage(m_stack); break;
+            case 7: {
+                auto* keepAlivePage = new PrefKeepAlivePage(m_stack);
+                // Wire play test to MainWindow audio playback if available
+                if (m_mainWindow) {
+                    keepAlivePage->setPlayTestCallback([this](float vol, int targetTab, int targetSlot, bool isSpecific, bool useSlotVol) {
+                        m_mainWindow->playTestSound(vol, targetTab, targetSlot, isSpecific, useSlotVol);
+                    });
+                }
+                page = keepAlivePage;
+                break;
+            }
             default: page = new PreferencesPage(m_stack); break;
         }
         // Implemented pages provide their own UI; just add to the stack
