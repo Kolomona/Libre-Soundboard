@@ -30,6 +30,8 @@ add_library(libresoundboard_core STATIC
     CustomTabBar.cpp
     CustomTabBar.h
     CustomTabWidget.h
+    KeepAliveMonitor.cpp
+    KeepAliveMonitor.h
 )
 
 # Qt

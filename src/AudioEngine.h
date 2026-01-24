@@ -3,6 +3,8 @@
 #include <vector>
 #include <string>
 
+class KeepAliveMonitor;
+
 /**
  * AudioEngine: thin wrapper around JACK client for playback control.
  * This is a stubbed implementation for initial development.
@@ -46,6 +48,19 @@ public:
     // Persist and restore JACK connections
     void saveConnections() const;
     void restoreConnections();
+
+    // KeepAliveMonitor integration
+    void setKeepAliveMonitor(KeepAliveMonitor* monitor);
+    KeepAliveMonitor* getKeepAliveMonitor() const;
+
+    // Get input samples from JACK input port
+    std::vector<float> getInputSamples() const;
+
+    // Process input samples through KeepAliveMonitor (called from JACK thread)
+    void processKeepAliveInput();
+
+    // For testing: inject samples directly
+    void injectInputSamplesForTesting(const std::vector<float>& samples);
 
 private:
     AudioEnginePrivate* m_priv = nullptr;

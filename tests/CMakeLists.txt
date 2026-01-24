@@ -46,3 +46,26 @@ add_executable(tests_waveform_cache_eviction
 )
 target_link_libraries(tests_waveform_cache_eviction PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Core Qt6::Gui)
 add_test(NAME waveform_cache_eviction_tests COMMAND tests_waveform_cache_eviction)
+
+add_executable(tests_keepalive_monitor
+    ../tests/test_keepalive_monitor.cpp
+)
+target_link_libraries(tests_keepalive_monitor PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Core)
+add_test(NAME keepalive_monitor_tests COMMAND tests_keepalive_monitor)
+add_executable(tests_audioengine_input
+    ../tests/test_audioengine_input.cpp
+)
+target_link_libraries(tests_audioengine_input PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Core)
+add_test(NAME audioengine_input_tests COMMAND tests_audioengine_input)
+
+add_executable(tests_mainwindow_keepalive
+    ../tests/test_mainwindow_keepalive.cpp
+)
+target_link_libraries(tests_mainwindow_keepalive PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Core Qt6::Widgets Qt6::Gui)
+add_test(NAME mainwindow_keepalive_tests COMMAND tests_mainwindow_keepalive)
+
+add_executable(tests_audioengine_connections
+    ../tests/test_audioengine_connections.cpp
+)
+target_link_libraries(tests_audioengine_connections PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Core)
+add_test(NAME audioengine_connections_tests COMMAND tests_audioengine_connections)

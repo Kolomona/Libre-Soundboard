@@ -32,6 +32,7 @@
 
 #include "SoundContainer.h"
 #include "AudioEngine.h"
+#include "KeepAliveMonitor.h"
 #include "PlayheadManager.h"
 #include "AudioFile.h"
 #include "WaveformCache.h"
@@ -234,6 +235,10 @@ MainWindow::MainWindow(QWidget* parent)
     setCentralWidget(m_tabs);
     // After UI is constructed, restore previous layout if any
     restoreLayout();
+    
+    // Initialize KeepAliveMonitor for input monitoring
+    initializeKeepAliveMonitor();
+    
     // Emit a startup debug line so we can confirm the debug logger is being invoked
     writeDebugLog(QString("MainWindow constructed pid=%1").arg(getpid()));
     setWindowTitle(tr("LibreSoundboard"));
@@ -1004,4 +1009,70 @@ void MainWindow::redoRenameOp(const Operation& op)
         m_tabs->setTabText(op.index, op.newName);
         m_undoStack.push_back(op);
     }
+}
+
+void MainWindow::initializeKeepAliveMonitor()
+{
+    m_keepAliveMonitor = new KeepAliveMonitor();
+    m_audioEngine.setKeepAliveMonitor(m_keepAliveMonitor);
+    
+    // Connect the keepAliveTriggered signal to our handler
+    connect(m_keepAliveMonitor, &KeepAliveMonitor::keepAliveTriggered,
+            this, &MainWindow::onKeepAliveTriggered);
+    
+    writeDebugLog("KeepAliveMonitor initialized");
+}
+
+KeepAliveMonitor* MainWindow::getKeepAliveMonitor() const
+{
+    return m_keepAliveMonitor;
+}
+
+AudioEngine* MainWindow::getAudioEngine()
+{
+    return &m_audioEngine;
+}
+
+void MainWindow::onKeepAliveTriggered()
+{
+    writeDebugLog("onKeepAliveTriggered: Keep-alive triggered");
+    
+    // Find the last tab (highest index)
+    if (!m_tabs || m_tabs->count() == 0) {
+        writeDebugLog("onKeepAliveTriggered: No tabs available");
+        return;
+    }
+    
+    int lastTabIndex = m_tabs->count() - 1;
+    
+    // Find the last sound container with a file in the last tab
+    if (lastTabIndex < 0 || lastTabIndex >= (int)m_containers.size()) {
+        writeDebugLog("onKeepAliveTriggered: Last tab index out of range");
+        return;
+    }
+    
+    auto& lastTabContainers = m_containers[lastTabIndex];
+    
+    // Search from the end backwards to find the last non-empty container
+    SoundContainer* lastContainer = nullptr;
+    for (auto it = lastTabContainers.rbegin(); it != lastTabContainers.rend(); ++it) {
+        if (*it && !(*it)->file().isEmpty()) {
+            lastContainer = *it;
+            break;
+        }
+    }
+    
+    if (!lastContainer) {
+        writeDebugLog("onKeepAliveTriggered: No loaded sounds in last tab");
+        return;
+    }
+    
+    // Trigger playback of this sound
+    QString filePath = lastContainer->file();
+    float volume = lastContainer->volume();
+    
+    writeDebugLog(QString("onKeepAliveTriggered: Playing '%1' at volume %2").arg(filePath).arg(volume));
+    
+    // Use the playRequested signal to trigger playback
+    emit lastContainer->playRequested(filePath, lastContainer);
 }

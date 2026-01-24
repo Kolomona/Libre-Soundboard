@@ -10,6 +10,7 @@ class CustomTabWidget;
 class SoundContainer;
 class QKeyEvent;
 class QWidget;
+class KeepAliveMonitor;
 
 /**
  * Main application window. Contains the menu and central grid layout.
@@ -30,6 +31,11 @@ public slots:
     void onTabOrderChanged();
     void saveLayout();
     void restoreLayout();
+    void onKeepAliveTriggered();
+
+    // KeepAliveMonitor integration accessors
+    KeepAliveMonitor* getKeepAliveMonitor() const;
+    AudioEngine* getAudioEngine();
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
@@ -81,6 +87,10 @@ private:
     // containers[tabIndex][slotIndex]
     std::vector<std::vector<SoundContainer*>> m_containers;
     QString m_layoutPath;
+    KeepAliveMonitor* m_keepAliveMonitor = nullptr;
+    
     void syncContainersWithUi();
     void writeDebugLog(const QString& msg);
+    void initializeKeepAliveMonitor();
 };
+

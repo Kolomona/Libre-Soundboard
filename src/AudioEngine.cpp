@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include "KeepAliveMonitor.h"
 
 #include <jack/jack.h>
 #include <samplerate.h>
@@ -10,20 +11,29 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <mutex>
 
 #include "AudioEnginePlay.h"
 
 struct AudioEnginePrivate {
     jack_client_t* client = nullptr;
     jack_port_t* out_ports[2] = {nullptr, nullptr};
+    jack_port_t* in_port = nullptr;
     unsigned int jack_sample_rate = 48000;
     AudioEnginePlay player;
+    KeepAliveMonitor* keepAliveMonitor = nullptr;
+    
+    // For testing: inject input samples
+    std::vector<float> testInputSamples;
+    std::mutex testInputLock;
 };
 
 static int jack_process(jack_nframes_t nframes, void* arg)
 {
     AudioEnginePrivate* d = reinterpret_cast<AudioEnginePrivate*>(arg);
     if (!d) return 0;
+    
+    // Handle output
     jack_port_t* port_l = d->out_ports[0];
     jack_port_t* port_r = d->out_ports[1];
     float* out_l = (float*)jack_port_get_buffer(port_l, nframes);
@@ -31,6 +41,17 @@ static int jack_process(jack_nframes_t nframes, void* arg)
 
     float* outputs[2] = { out_l, out_r };
     d->player.process(outputs, nframes, 2);
+    
+    // Handle input - feed to KeepAliveMonitor
+    if (d->in_port && d->keepAliveMonitor) {
+        float* in_buf = (float*)jack_port_get_buffer(d->in_port, nframes);
+        if (in_buf) {
+            std::vector<float> input_samples(in_buf, in_buf + nframes);
+            // Process 1 frame (mono input from JACK)
+            d->keepAliveMonitor->processInputSamples(input_samples, nframes, 1);
+        }
+    }
+    
     return 0;
 }
 
@@ -58,6 +79,7 @@ bool AudioEngine::init()
     m_priv->jack_sample_rate = jack_get_sample_rate(m_priv->client);
     m_priv->out_ports[0] = jack_port_register(m_priv->client, "out_l", JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
     m_priv->out_ports[1] = jack_port_register(m_priv->client, "out_r", JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
+    m_priv->in_port = jack_port_register(m_priv->client, "in", JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0);
 
     jack_set_process_callback(m_priv->client, jack_process, m_priv);
 
@@ -102,6 +124,7 @@ void AudioEngine::saveConnections() const
     std::ofstream ofs(path, std::ios::trunc);
     if (!ofs) return;
 
+    // Save output ports (left and right)
     for (int i = 0; i < 2; ++i) {
         jack_port_t* p = m_priv->out_ports[i];
         if (!p) continue;
@@ -117,6 +140,27 @@ void AudioEngine::saveConnections() const
             jack_free(conns);
         }
         ofs << "\n";
+    }
+
+    // Save input port (with reversed connection direction)
+    // Input port connections are SOURCES feeding INTO the input port,
+    // so we need to save them in reverse order: source|input_port
+    // so that jack_connect(source, input_port) works on restore
+    if (m_priv->in_port) {
+        const char* pname = jack_port_name(m_priv->in_port);
+        if (pname) {
+            const char** conns = jack_port_get_connections(m_priv->in_port);
+            if (conns) {
+                for (int j = 0; conns[j]; ++j) {
+                    // For input ports, reverse the direction: source|input_port
+                    ofs << conns[j] << "|" << pname << "\n";
+                }
+                jack_free(conns);
+            } else {
+                // No connections, but still record the port exists (empty target)
+                ofs << pname << "|\n";
+            }
+        }
     }
     ofs.close();
 }
@@ -230,4 +274,54 @@ AudioEngine::PlaybackInfo AudioEngine::getPlaybackInfoForId(const std::string& i
     out.sampleRate = pinfo.sampleRate;
     out.totalFrames = pinfo.totalFrames;
     return out;
+}
+
+void AudioEngine::setKeepAliveMonitor(KeepAliveMonitor* monitor)
+{
+    if (m_priv) {
+        m_priv->keepAliveMonitor = monitor;
+    }
+}
+
+KeepAliveMonitor* AudioEngine::getKeepAliveMonitor() const
+{
+    if (!m_priv) return nullptr;
+    return m_priv->keepAliveMonitor;
+}
+
+std::vector<float> AudioEngine::getInputSamples() const
+{
+    if (!m_priv || !m_priv->in_port || !m_priv->client) {
+        return std::vector<float>();
+    }
+    
+    // Can only be safely called from the JACK process callback
+    // For now, return empty (real implementation would use atomic buffer exchange)
+    return std::vector<float>();
+}
+
+void AudioEngine::processKeepAliveInput()
+{
+    // This is called from outside the JACK thread to process test inputs
+    if (!m_priv || !m_priv->keepAliveMonitor) {
+        return;
+    }
+    
+    std::lock_guard<std::mutex> lock(m_priv->testInputLock);
+    if (!m_priv->testInputSamples.empty()) {
+        // Process 1 frame with 1 channel (mono input for testing)
+        m_priv->keepAliveMonitor->processInputSamples(
+            m_priv->testInputSamples,
+            m_priv->testInputSamples.size(),
+            1
+        );
+        m_priv->testInputSamples.clear();
+    }
+}
+
+void AudioEngine::injectInputSamplesForTesting(const std::vector<float>& samples)
+{
+    if (!m_priv) return;
+    std::lock_guard<std::mutex> lock(m_priv->testInputLock);
+    m_priv->testInputSamples = samples;
 }
