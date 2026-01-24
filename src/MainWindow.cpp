@@ -39,6 +39,8 @@
 #include "CustomTabBar.h"
 #include "CustomTabWidget.h"
 #include "PreferencesDialog.h"
+#include "PreferencesManager.h"
+#include "DebugLog.h"
 
 #include <QDateTime>
 #include <QFile>
@@ -49,6 +51,9 @@
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
+    // Apply log level from preferences on startup
+    DebugLog::setLevel(static_cast<int>(PreferencesManager::instance().logLevel()));
+
     // Try to initialize the audio engine (JACK)
     if (!m_audioEngine.init()) {
         statusBar()->showMessage(tr("JACK not available; audio disabled"), 5000);
@@ -155,6 +160,8 @@ MainWindow::MainWindow(QWidget* parent)
                 sc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
                 sc->setMinimumWidth(0);
                 sc->setMinimumHeight(0);
+                // Apply default gain from preferences on creation
+                sc->setVolume(static_cast<float>(PreferencesManager::instance().defaultGain()));
                 layout->addWidget(sc, r, c);
                 m_containers[t].push_back(sc);
                 connect(sc, &SoundContainer::playRequested, this, &MainWindow::onPlayRequested);
@@ -584,7 +591,7 @@ void MainWindow::onCopyRequested(SoundContainer* src, SoundContainer* dst)
     } else {
         // if source has no file, clear dest
         dst->setFile(QString());
-        dst->setVolume(0.8f);
+        dst->setVolume(static_cast<float>(PreferencesManager::instance().defaultGain()));
     }
 
     // Record operation for undo/redo
@@ -657,7 +664,7 @@ void MainWindow::onClearRequested(SoundContainer* sc)
 
     // perform clear
     sc->setFile(QString());
-    sc->setVolume(0.8f);
+    sc->setVolume(static_cast<float>(PreferencesManager::instance().defaultGain()));
     // also clear any user-selected backdrop color for this slot
     sc->setBackdropColor(QColor());
     syncContainersWithUi();
@@ -1002,7 +1009,7 @@ void MainWindow::redoClear(const Operation& op)
     SoundContainer* sc = m_containers[op.tab][idx];
     if (!sc) return;
     sc->setFile(QString());
-    sc->setVolume(0.8f);
+    sc->setVolume(static_cast<float>(PreferencesManager::instance().defaultGain()));
     // clear backdrop color on redo of clear
     sc->setBackdropColor(QColor());
     m_undoStack.push_back(op);

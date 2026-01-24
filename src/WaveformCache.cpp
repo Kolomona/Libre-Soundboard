@@ -7,6 +7,7 @@
 #include <QDebug>
 #include <QDateTime>
 #include <algorithm>
+#include "PreferencesManager.h"
 
 QString WaveformCache::cacheDirPath() {
     // Allow override for tests or custom locations
@@ -241,6 +242,12 @@ QImage WaveformCache::loadBest(const QString& path, qint64 size, qint64 mtime, i
 
 void WaveformCache::evict(qint64 softLimitBytes, int ttlDays)
 {
+    // Use preferences values regardless of provided defaults
+    int mb = PreferencesManager::instance().cacheSoftLimitMB();
+    int days = PreferencesManager::instance().cacheTtlDays();
+    if (mb < 0) mb = 0; if (days < 0) days = 0;
+    softLimitBytes = static_cast<qint64>(mb) * 1024 * 1024;
+    ttlDays = days;
     QString dir = cacheDirPath();
     QDir d(dir);
     if (!d.exists()) return;

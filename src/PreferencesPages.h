@@ -1,10 +1,18 @@
 #pragma once
 #include "PreferencesPage.h"
 
+class QDoubleSpinBox;
+class QSpinBox;
+class QComboBox;
+
 class PrefAudioEnginePage : public PreferencesPage {
     Q_OBJECT
 public:
-    explicit PrefAudioEnginePage(QWidget* parent = nullptr) : PreferencesPage(parent) {}
+    explicit PrefAudioEnginePage(QWidget* parent = nullptr);
+    void apply() override;
+    void reset() override;
+private:
+    QDoubleSpinBox* m_gain = nullptr;
 };
 
 class PrefGridLayoutPage : public PreferencesPage {
@@ -16,7 +24,12 @@ public:
 class PrefWaveformCachePage : public PreferencesPage {
     Q_OBJECT
 public:
-    explicit PrefWaveformCachePage(QWidget* parent = nullptr) : PreferencesPage(parent) {}
+    explicit PrefWaveformCachePage(QWidget* parent = nullptr);
+    void apply() override;
+    void reset() override;
+private:
+    QSpinBox* m_size = nullptr;
+    QSpinBox* m_ttl = nullptr;
 };
 
 class PrefFileHandlingPage : public PreferencesPage {
@@ -40,7 +53,11 @@ public:
 class PrefDebugPage : public PreferencesPage {
     Q_OBJECT
 public:
-    explicit PrefDebugPage(QWidget* parent = nullptr) : PreferencesPage(parent) {}
+    explicit PrefDebugPage(QWidget* parent = nullptr);
+    void apply() override;
+    void reset() override;
+private:
+    QComboBox* m_level = nullptr;
 };
 
 class PrefKeepAlivePage : public PreferencesPage {

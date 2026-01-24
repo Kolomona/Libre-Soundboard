@@ -10,11 +10,23 @@
 static QFile* g_logFile = nullptr;
 static QtMessageHandler g_oldHandler = nullptr;
 static QMutex g_logMutex;
+static int g_logLevel = 2; // Warning by default
 
 static void debugMessageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
 {
     QMutexLocker locker(&g_logMutex);
     if (g_logFile && g_logFile->isOpen()) {
+        // Filter by level when writing to file
+        int lvlType = 0;
+        switch (type) {
+        case QtDebugMsg: lvlType = 4; break;
+        case QtInfoMsg: lvlType = 3; break;
+        case QtWarningMsg: lvlType = 2; break;
+        case QtCriticalMsg: lvlType = 1; break;
+        case QtFatalMsg: lvlType = 1; break;
+        }
+        if (g_logLevel == 0) return; // Off
+        if (lvlType > g_logLevel) return;
         QTextStream ts(g_logFile);
         ts << QDateTime::currentDateTime().toString(Qt::ISODate) << " ";
         switch (type) {
@@ -30,8 +42,17 @@ static void debugMessageHandler(QtMsgType type, const QMessageLogContext &contex
         return;
     }
 
-    // No log file: suppress debug/info to avoid console spam; forward warnings/errors
-    if (type == QtDebugMsg || type == QtInfoMsg) return;
+    // No log file: filter messages by level; forward allowed ones
+    int lvlType = 0;
+    switch (type) {
+    case QtDebugMsg: lvlType = 4; break;
+    case QtInfoMsg: lvlType = 3; break;
+    case QtWarningMsg: lvlType = 2; break;
+    case QtCriticalMsg: lvlType = 1; break;
+    case QtFatalMsg: lvlType = 1; break;
+    }
+    if (g_logLevel == 0) return;
+    if (lvlType > g_logLevel) return;
 
     if (g_oldHandler) {
         g_oldHandler(type, context, msg);
@@ -74,4 +95,17 @@ void DebugLog::uninstall()
         delete g_logFile;
         g_logFile = nullptr;
     }
+}
+
+void DebugLog::setLevel(int level)
+{
+    QMutexLocker locker(&g_logMutex);
+    if (level < 0) level = 0; if (level > 4) level = 4;
+    g_logLevel = level;
+}
+
+int DebugLog::level()
+{
+    QMutexLocker locker(&g_logMutex);
+    return g_logLevel;
 }

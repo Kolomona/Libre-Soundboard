@@ -32,15 +32,15 @@ LibreSoundboard has 10 key user-configurable preferences currently hardcoded or 
 **Goals:** Implement Cache Size Limit, Cache TTL, Default Gain Level, Logging Level
 
 **Tasks:**
-- [ ] Implement WaveformCache preferences page with spinboxes: Cache Size Limit (MB), Cache TTL (days)
-- [ ] Implement AudioEngine preferences page with spinbox: Default Gain Level (0.0-1.0 with step 0.1)
-- [ ] Implement Debug preferences page with combobox: Logging Level (Off, Error, Warning, Info, Debug)
-- [ ] PreferencesManager loads/saves these from QSettings on init and apply
-- [ ] Save button applies all preferences, persists to QSettings
-- [ ] MainWindow reads default gain from PreferencesManager when creating new SoundContainers
-- [ ] WaveformCache::evict() uses PreferencesManager values instead of hardcoded
-- [ ] DebugLog respects logging level setting
-- [ ] Build succeeds
+- [x] Implement WaveformCache preferences page with spinboxes: Cache Size Limit (MB), Cache TTL (days)
+- [x] Implement AudioEngine preferences page with spinbox: Default Gain Level (0.0-1.0 with step 0.1)
+- [x] Implement Debug preferences page with combobox: Logging Level (Off, Error, Warning, Info, Debug)
+- [x] PreferencesManager loads/saves these from QSettings on init and apply
+- [x] Save button applies all preferences, persists to QSettings
+- [x] MainWindow reads default gain from PreferencesManager when creating new SoundContainers
+- [x] WaveformCache::evict() uses PreferencesManager values instead of hardcoded
+- [x] DebugLog respects logging level setting
+- [x] Build succeeds
 
 **Notes:** Use QSpinBox for numeric, QComboBox for logging level. Reset button should reload from QSettings.
 

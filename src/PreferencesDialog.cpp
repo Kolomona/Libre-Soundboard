@@ -54,12 +54,7 @@ void PreferencesDialog::buildUi() {
             case 7: page = new PrefKeepAlivePage(m_stack); break;
             default: page = new PreferencesPage(m_stack); break;
         }
-        // Empty pages show a neutral label for now
-        auto* lbl = new QLabel(tr("%1 settings (coming soon)").arg(names[i]), page);
-        lbl->setAlignment(Qt::AlignCenter);
-        auto* pageLayout = new QVBoxLayout(page);
-        pageLayout->addWidget(lbl);
-        pageLayout->addStretch();
+        // Implemented pages provide their own UI; just add to the stack
         m_stack->addWidget(page);
     }
     m_tree->setCurrentItem(m_tree->topLevelItem(0));
