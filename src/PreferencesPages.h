@@ -57,10 +57,16 @@ private:
     QLineEdit* m_soundDir = nullptr;
 };
 
+class QTableWidget;
+
 class PrefKeyboardShortcutsPage : public PreferencesPage {
     Q_OBJECT
 public:
-    explicit PrefKeyboardShortcutsPage(QWidget* parent = nullptr) : PreferencesPage(parent) {}
+    explicit PrefKeyboardShortcutsPage(QWidget* parent = nullptr);
+    void apply() override;
+    void reset() override;
+private:
+    QTableWidget* m_table = nullptr;
 };
 
 class PrefStartupPage : public PreferencesPage {

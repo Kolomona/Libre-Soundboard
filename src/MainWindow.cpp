@@ -41,6 +41,7 @@
 #include "CustomTabWidget.h"
 #include "PreferencesDialog.h"
 #include "PreferencesManager.h"
+#include "ShortcutsManager.h"
 #include "DebugLog.h"
 
 #include <QDateTime>
@@ -939,7 +940,30 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
         return;
     }
 
-    // Number keys 1-9 and 0 map to first tab's first 10 containers
+    // Check for configured shortcuts first
+    QKeySequence sequence(event->modifiers() | event->key());
+    ShortcutsManager& sm = ShortcutsManager::instance();
+    int slotIndex = sm.slotForShortcut(sequence);
+    
+    if (slotIndex >= 0) {
+        // Find the container for this slot index
+        // Slots are numbered globally across all tabs
+        int currentTab = m_tabs->currentIndex();
+        int containersPerTab = m_gridRows * m_gridCols;
+        
+        // Check if slot exists in current tab
+        if (currentTab >= 0 && currentTab < static_cast<int>(m_containers.size())) {
+            if (slotIndex < static_cast<int>(m_containers[currentTab].size())) {
+                SoundContainer* sc = m_containers[currentTab][slotIndex];
+                if (sc && !sc->file().isEmpty()) {
+                    onPlayRequested(sc->file(), sc);
+                    return;
+                }
+            }
+        }
+    }
+
+    // Number keys 1-9 and 0 map to first tab's first 10 containers (legacy behavior)
     if (event->key() >= Qt::Key_0 && event->key() <= Qt::Key_9) {
         int n = 0;
         int key = event->key();

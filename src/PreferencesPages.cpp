@@ -1,5 +1,6 @@
 #include "PreferencesPages.h"
 #include "PreferencesManager.h"
+#include "ShortcutsManager.h"
 #include <QVBoxLayout>
 #include <QFormLayout>
 #include <QLabel>
@@ -12,6 +13,9 @@
 #include <QLineEdit>
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QTableWidget>
+#include <QKeySequenceEdit>
+#include <QHeaderView>
 #include "DebugLog.h"
 
 // Implement the existing page classes with UI and apply/reset logic
@@ -395,3 +399,72 @@ void PrefFileHandlingPage::reset()
 	m_soundDir->setText(PreferencesManager::instance().defaultSoundDirectory());
 }
 
+// Phase 7: Keyboard Shortcuts Page
+PrefKeyboardShortcutsPage::PrefKeyboardShortcutsPage(QWidget* parent)
+	: PreferencesPage(parent)
+{
+	auto* v = new QVBoxLayout(this);
+	
+	auto* label = new QLabel(tr("Configure keyboard shortcuts for sound slots.\n"
+	                           "Press keys in the shortcut column to set a new shortcut."), this);
+	label->setWordWrap(true);
+	v->addWidget(label);
+	
+	m_table = new QTableWidget(this);
+	m_table->setObjectName("tableShortcuts");
+	m_table->setColumnCount(1);
+	m_table->setHorizontalHeaderLabels({tr("Shortcut")});
+	m_table->horizontalHeader()->setStretchLastSection(true);
+	m_table->setRowCount(32); // Default 4x8 grid = 32 slots
+	
+	// Populate table with shortcut editors (row header already shows slot number)
+	for (int i = 0; i < 32; ++i) {
+		auto* editor = new QKeySequenceEdit(m_table);
+		editor->setObjectName(QString("keySeqEdit_%1").arg(i));
+		m_table->setCellWidget(i, 0, editor);
+	}
+	
+	v->addWidget(m_table);
+	setLayout(v);
+	reset();
+}
+
+void PrefKeyboardShortcutsPage::apply()
+{
+	ShortcutsManager& sm = ShortcutsManager::instance();
+	
+	// Clear all existing shortcuts first
+	sm.clearAll();
+	
+	// Set shortcuts from table
+	for (int i = 0; i < m_table->rowCount(); ++i) {
+		auto* editor = qobject_cast<QKeySequenceEdit*>(m_table->cellWidget(i, 0));
+		if (editor) {
+			QKeySequence seq = editor->keySequence();
+			if (!seq.isEmpty()) {
+				// Check for duplicates before setting
+				if (sm.isShortcutAssigned(seq)) {
+					QMessageBox::warning(this, tr("Duplicate Shortcut"),
+						tr("Shortcut %1 is assigned to multiple slots. Only the first occurrence will be saved.")
+						.arg(seq.toString()));
+				} else {
+					sm.setSlotShortcut(i, seq);
+				}
+			}
+		}
+	}
+}
+
+void PrefKeyboardShortcutsPage::reset()
+{
+	ShortcutsManager& sm = ShortcutsManager::instance();
+	
+	// Load shortcuts from manager into table (don't call loadDefaults automatically)
+	for (int i = 0; i < m_table->rowCount(); ++i) {
+		auto* editor = qobject_cast<QKeySequenceEdit*>(m_table->cellWidget(i, 0));
+		if (editor) {
+			QKeySequence seq = sm.slotShortcut(i);
+			editor->setKeySequence(seq);
+		}
+	}
+}
