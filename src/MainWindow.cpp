@@ -72,7 +72,16 @@ MainWindow::MainWindow(QWidget* parent)
 
     // Menu
     auto fileMenu = menuBar()->addMenu(tr("File"));
-    fileMenu->addAction(tr("Open"));
+    
+    QAction* newAction = fileMenu->addAction(tr("New Session"));
+    newAction->setShortcut(QKeySequence::New);
+    connect(newAction, &QAction::triggered, this, &MainWindow::onNewSession);
+    
+    QAction* openAction = fileMenu->addAction(tr("Open"));
+    openAction->setShortcut(QKeySequence::Open);
+    connect(openAction, &QAction::triggered, this, &MainWindow::onOpen);
+    
+    fileMenu->addSeparator();
     
     QAction* saveAction = fileMenu->addAction(tr("Save"));
     saveAction->setShortcut(QKeySequence::Save);
@@ -197,6 +206,10 @@ MainWindow::MainWindow(QWidget* parent)
                 connect(sc, &SoundContainer::copyRequested, this, &MainWindow::onCopyRequested);
                 connect(sc, &SoundContainer::fileChanged, this, [this](const QString& p){ statusBar()->showMessage(p, 2000); });
                 connect(sc, &SoundContainer::clearRequested, this, &MainWindow::onClearRequested);
+                // Mark session dirty on any modification
+                connect(sc, &SoundContainer::fileChanged, this, &MainWindow::onSessionModified);
+                connect(sc, &SoundContainer::volumeChanged, this, &MainWindow::onSessionModified);
+                connect(sc, &SoundContainer::backdropColorChanged, this, &MainWindow::onSessionModified);
                 // Update active voice gain when the slider changes
                 connect(sc, &SoundContainer::volumeChanged, this, [this, sc](float v){
                     if (sc && !sc->file().isEmpty()) {
@@ -475,6 +488,16 @@ void MainWindow::resizeEvent(QResizeEvent* event)
         sc->setMinimumWidth(0);
         sc->setMaximumWidth(QWIDGETSIZE_MAX);
         sc->updateGeometry();
+    }
+}
+
+void MainWindow::closeEvent(QCloseEvent* event)
+{
+    auto result = promptToSaveIfDirty();
+    if (result == SavePromptResult::Cancel) {
+        event->ignore();
+    } else {
+        event->accept();
     }
 }
 
@@ -1482,6 +1505,7 @@ void MainWindow::saveSessionAs(const QString& filePath)
     // Save via SessionManager
     if (SessionManager::instance().saveSession(filePath, doc)) {
         m_currentSessionPath = filePath;
+        m_sessionDirty = false;
         PreferencesManager::instance().setLastSavedSessionPath(filePath);
         PreferencesManager::instance().settings().sync();
         updateRecentSessionsMenu();
@@ -1544,6 +1568,8 @@ void MainWindow::loadSession(const QString& filePath)
     PreferencesManager::instance().settings().sync();
     statusBar()->showMessage(tr("Session loaded: %1").arg(QFileInfo(filePath).fileName()), 3000);
     m_currentSessionPath = filePath;
+    m_sessionDirty = false;
+    updateRecentSessionsMenu();
     updateWindowTitle();
 }
 
@@ -1561,6 +1587,10 @@ void MainWindow::onSaveSessionAs()
     QString fileName = QFileDialog::getSaveFileName(this,
         tr("Save Session As..."), QString(), tr("Session Files (*.json);;All Files (*)"));
     if (!fileName.isEmpty()) {
+        // Ensure .json extension
+        if (!fileName.endsWith(".json", Qt::CaseInsensitive)) {
+            fileName += ".json";
+        }
         saveSessionAs(fileName);
         m_currentSessionPath = fileName;
         updateWindowTitle();
@@ -1575,6 +1605,13 @@ void MainWindow::onLoadRecentSession()
         m_currentSessionPath = action->data().toString();
         updateWindowTitle();
     }
+}
+
+void MainWindow::onClearRecentSessions()
+{
+    SessionManager::instance().clearRecentSessions();
+    updateRecentSessionsMenu();
+    statusBar()->showMessage(tr("Recent sessions cleared"), 2000);
 }
 
 void MainWindow::updateRecentSessionsMenu()
@@ -1594,6 +1631,10 @@ void MainWindow::updateRecentSessionsMenu()
         action->setData(path);
         connect(action, &QAction::triggered, this, &MainWindow::onLoadRecentSession);
     }
+    
+    m_recentMenu->addSeparator();
+    QAction* clearAction = m_recentMenu->addAction(tr("Clear Recents"));
+    connect(clearAction, &QAction::triggered, this, &MainWindow::onClearRecentSessions);
 }
 
 void MainWindow::updateWindowTitle()
@@ -1605,4 +1646,133 @@ void MainWindow::updateWindowTitle()
         title = QFileInfo(m_currentSessionPath).baseName() + tr(" - LibreSoundboard");
     }
     setWindowTitle(title);
+}
+
+void MainWindow::markSessionDirty()
+{
+    m_sessionDirty = true;
+}
+
+void MainWindow::onSessionModified()
+{
+    markSessionDirty();
+}
+
+MainWindow::SavePromptResult MainWindow::promptToSaveIfDirty()
+{
+    if (!m_sessionDirty) {
+        return SavePromptResult::DiscardChanges;
+    }
+    
+    QString sessionName = m_currentSessionPath.isEmpty() ? 
+        tr("Untitled") : QFileInfo(m_currentSessionPath).fileName();
+    
+    QMessageBox dlg(QMessageBox::Warning, tr("Save Changes?"), 
+        tr("Save changes to '%1' before continuing?").arg(sessionName),
+        QMessageBox::NoButton, this);
+    
+    auto saveBtn = dlg.addButton(tr("Save"), QMessageBox::AcceptRole);
+    dlg.addButton(tr("Don't Save"), QMessageBox::RejectRole);
+    auto cancelBtn = dlg.addButton(QMessageBox::Cancel);
+    
+    dlg.exec();
+    
+    QAbstractButton* clicked = dlg.clickedButton();
+    
+    if (clicked == reinterpret_cast<QAbstractButton*>(saveBtn)) {
+        if (m_currentSessionPath.isEmpty()) {
+            // Untitled session - need to show Save As dialog
+            QString fileName = QFileDialog::getSaveFileName(this,
+                tr("Save Session As..."), QString(), tr("Session Files (*.json);;All Files (*)"));
+            if (!fileName.isEmpty()) {
+                // Ensure .json extension
+                if (!fileName.endsWith(".json", Qt::CaseInsensitive)) {
+                    fileName += ".json";
+                }
+                saveSessionAs(fileName);
+                return SavePromptResult::SaveSession;
+            } else {
+                return SavePromptResult::Cancel;
+            }
+        } else {
+            // Existing session - save to current path
+            saveSessionAs(m_currentSessionPath);
+            return SavePromptResult::SaveSession;
+        }
+    } else if (clicked == reinterpret_cast<QAbstractButton*>(cancelBtn)) {
+        return SavePromptResult::Cancel;
+    }
+    
+    return SavePromptResult::DiscardChanges;
+}
+
+void MainWindow::onNewSession()
+{
+    auto result = promptToSaveIfDirty();
+    if (result == SavePromptResult::Cancel) {
+        return;
+    }
+    
+    // Clear all containers
+    for (auto& tabVec : m_containers) {
+        for (auto* sc : tabVec) {
+            if (sc) {
+                sc->setFile(QString());
+                sc->setVolume(0.8f);
+                sc->setBackdropColor(QColor());
+            }
+        }
+    }
+    
+    // Reset tab names
+    for (int i = 0; i < m_tabs->count(); ++i) {
+        m_tabs->setTabText(i, tr("Tab %1").arg(i + 1));
+    }
+    
+    // Clear session path and mark clean
+    m_currentSessionPath.clear();
+    m_sessionDirty = false;
+    updateWindowTitle();
+    statusBar()->showMessage(tr("New session created"), 2000);
+}
+
+void MainWindow::onOpen()
+{
+    auto result = promptToSaveIfDirty();
+    if (result == SavePromptResult::Cancel) {
+        return;
+    }
+    
+    QString fileName = QFileDialog::getOpenFileName(this,
+        tr("Open Session"), PreferencesManager::instance().defaultSoundDirectory(),
+        tr("Session Files (*.json);;All Files (*)"));
+    
+    if (!fileName.isEmpty()) {
+        loadSession(fileName);
+    }
+}
+
+void MainWindow::handleCloseEvent()
+{
+    if (!m_sessionDirty) {
+        QApplication::quit();
+        return;
+    }
+    
+    QMessageBox::StandardButton reply = QMessageBox::question(this,
+        tr("Unsaved Changes"),
+        tr("You have unsaved changes. Do you want to save them before closing?"),
+        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+    
+    if (reply == QMessageBox::Save) {
+        if (m_currentSessionPath.isEmpty()) {
+            onSaveSessionAs();
+        } else {
+            onSaveSession();
+        }
+        QApplication::quit();
+    } else if (reply == QMessageBox::Discard) {
+        QApplication::quit();
+    }
+    // Cancel - do nothing, window stays open
 }

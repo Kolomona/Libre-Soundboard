@@ -111,6 +111,12 @@ add_executable(tests_phase9_ui_integration
 )
 target_link_libraries(tests_phase9_ui_integration PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Core Qt6::Widgets Qt6::Gui)
 add_test(NAME phase9_ui_integration_tests COMMAND tests_phase9_ui_integration)
+
+add_executable(tests_session_dirty_state
+    test_session_dirty_state.cpp
+)
+target_link_libraries(tests_session_dirty_state PRIVATE Catch2::Catch2 libresoundboard_core Qt6::Core Qt6::Widgets Qt6::Gui)
+add_test(NAME session_dirty_state_tests COMMAND tests_session_dirty_state)
 add_executable(tests_preferences_phase6
     ../tests/test_preferences_phase6.cpp
 )

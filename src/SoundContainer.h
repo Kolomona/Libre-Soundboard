@@ -40,6 +40,7 @@ signals:
     void stopRequested(const QString& path, SoundContainer* self);
     void fileChanged(const QString& path);
     void volumeChanged(float volume);
+    void backdropColorChanged(const QColor& color);
     void clearRequested(SoundContainer* self);
 
 public:

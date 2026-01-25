@@ -784,6 +784,7 @@ void SoundContainer::applyWaveformPixmapWithBackdrop(int targetWpx, int targetHp
 void SoundContainer::setBackdropColor(const QColor& c)
 {
     m_backdropColor = c;
+    emit backdropColorChanged(c);
     // reapply to current pixmap if present
     if (m_hasWavePixmap && !m_wavePixmap.isNull()) {
         QSize labelSize = availableDisplaySize();

@@ -20,6 +20,8 @@ class MainWindow : public QMainWindow
 {
     Q_OBJECT
 public:
+    enum class SavePromptResult { SaveSession, DiscardChanges, Cancel };
+
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
 
@@ -38,6 +40,10 @@ public slots:
     // Session I/O
     void saveSessionAs(const QString& filePath);
     void loadSession(const QString& filePath);
+
+    // Dirty state tracking
+    bool isSessionDirty() const { return m_sessionDirty; }
+    SavePromptResult promptToSaveIfDirty();
 
     // KeepAliveMonitor integration accessors
     KeepAliveMonitor* getKeepAliveMonitor() const;
@@ -60,8 +66,21 @@ protected:
     void keyPressEvent(QKeyEvent* event) override;
     bool eventFilter(QObject* obj, QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    void closeEvent(QCloseEvent* event) override;
     void performUndo();
     void performRedo();
+
+private slots:
+    void onNewSession();
+    void onOpen();
+    void onSaveSession();
+    void onSaveSessionAs();
+    void onLoadRecentSession();
+    void onClearRecentSessions();
+    void onSessionModified();
+
+    // Session management helpers
+    void handleCloseEvent();     // Handle window close event
 
 private:
     struct Operation {
@@ -101,11 +120,6 @@ private:
     QAction* m_undoAction = nullptr;
     QAction* m_redoAction = nullptr;
 
-private slots:
-    void onSaveSession();
-    void onSaveSessionAs();
-    void onLoadRecentSession();
-
 private:
     AudioEngine m_audioEngine;
     CustomTabWidget* m_tabs = nullptr;
@@ -116,12 +130,14 @@ private:
     QString m_layoutPath;
     QString m_currentSessionPath;
     QMenu* m_recentMenu = nullptr;
+    bool m_sessionDirty = false;
     KeepAliveMonitor* m_keepAliveMonitor = nullptr;
     QLabel* m_keepAliveStatusLabel = nullptr;
     void applyKeepAlivePreferences();
     bool playAudioFile(const QString& path, SoundContainer* src, float volumeOverride, bool useOverrideVolume);
     void updateRecentSessionsMenu();
     void updateWindowTitle();
+    void markSessionDirty();
     
     void syncContainersWithUi();
     void writeDebugLog(const QString& msg);
