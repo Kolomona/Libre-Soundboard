@@ -172,8 +172,8 @@ MainWindow::MainWindow(QWidget* parent)
                 sc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
                 sc->setMinimumWidth(0);
                 sc->setMinimumHeight(0);
-                // Apply default gain from preferences on creation
-                sc->setVolume(static_cast<float>(PreferencesManager::instance().defaultGain()));
+                // Apply default gain on creation
+                sc->setVolume(0.8f);
                 layout->addWidget(sc, r, c);
                 m_containers[t].push_back(sc);
                 connect(sc, &SoundContainer::playRequested, this, &MainWindow::onPlayRequested);
@@ -714,7 +714,7 @@ void MainWindow::onGridDimensionsChanged(int rows, int cols)
             sc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
             sc->setMinimumWidth(0);
             sc->setMinimumHeight(0);
-            sc->setVolume(static_cast<float>(PreferencesManager::instance().defaultGain()));
+            sc->setVolume(0.8f);
             newLayout->addWidget(sc, r, c);
             attachContainer(sc);
             tabContainers.push_back(sc);
@@ -848,7 +848,7 @@ void MainWindow::onCopyRequested(SoundContainer* src, SoundContainer* dst)
     } else {
         // if source has no file, clear dest
         dst->setFile(QString());
-        dst->setVolume(static_cast<float>(PreferencesManager::instance().defaultGain()));
+        dst->setVolume(0.8f);
     }
 
     // Record operation for undo/redo
@@ -921,7 +921,7 @@ void MainWindow::onClearRequested(SoundContainer* sc)
 
     // perform clear
     sc->setFile(QString());
-    sc->setVolume(static_cast<float>(PreferencesManager::instance().defaultGain()));
+    sc->setVolume(0.8f);
     // also clear any user-selected backdrop color for this slot
     sc->setBackdropColor(QColor());
     syncContainersWithUi();
@@ -1266,7 +1266,7 @@ void MainWindow::redoClear(const Operation& op)
     SoundContainer* sc = m_containers[op.tab][idx];
     if (!sc) return;
     sc->setFile(QString());
-    sc->setVolume(static_cast<float>(PreferencesManager::instance().defaultGain()));
+    sc->setVolume(0.8f);
     // clear backdrop color on redo of clear
     sc->setBackdropColor(QColor());
     m_undoStack.push_back(op);
@@ -1327,6 +1327,29 @@ KeepAliveMonitor* MainWindow::getKeepAliveMonitor() const
 AudioEngine* MainWindow::getAudioEngine()
 {
     return &m_audioEngine;
+}
+
+void MainWindow::restartAudioEngineWithPreferences(const QString& oldClientName)
+{
+    m_audioEngine.stopAll();
+    m_audioEngine.shutdown();
+    
+    // If client name changed, update the connections file
+    QString newClientName = PreferencesManager::instance().jackClientName();
+    if (!oldClientName.isEmpty() && oldClientName != newClientName) {
+        AudioEngine::updateConnectionsForClientRename(
+            oldClientName.toStdString(),
+            newClientName.toStdString()
+        );
+    }
+    
+    if (!m_audioEngine.init()) {
+        statusBar()->showMessage(tr("JACK restart failed"), 4000);
+    } else {
+        statusBar()->showMessage(tr("Audio engine restarted"), 2000);
+    }
+    PlayheadManager::instance()->init(&m_audioEngine);
+    applyKeepAlivePreferences();
 }
 
 void MainWindow::onKeepAliveTriggered()

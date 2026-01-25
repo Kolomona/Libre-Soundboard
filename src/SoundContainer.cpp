@@ -456,7 +456,7 @@ void SoundContainer::setFile(const QString& path)
         }
         m_filePath.clear();
         resetToDefaultAppearance();
-        setVolume(static_cast<float>(PreferencesManager::instance().defaultGain()));
+        setVolume(0.8f);
         emit fileChanged(QString());
         return;
     }
@@ -468,7 +468,7 @@ void SoundContainer::setFile(const QString& path)
     m_filenameLabel->setToolTip(fi.fileName());
     // Reset volume to default when a new file is assigned via drag-and-drop
     // (restoreLayout will call setVolume afterward if restoring saved state)
-    setVolume(static_cast<float>(PreferencesManager::instance().defaultGain()));
+    setVolume(0.8f);
     emit fileChanged(path);
 
     // ensure we have a waveform worker

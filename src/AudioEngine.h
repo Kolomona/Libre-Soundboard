@@ -54,6 +54,14 @@ public:
     KeepAliveMonitor* getKeepAliveMonitor() const;
     void autoConnectInputPort();
 
+    // Preference tracking / test helpers
+    std::string clientName() const;
+    bool autoConnectOutputsEnabled() const;
+    int initCount() const;
+
+    // Update connections file when client name changes
+    static void updateConnectionsForClientRename(const std::string& oldClientName, const std::string& newClientName);
+
     // Get input samples from JACK input port
     std::vector<float> getInputSamples() const;
 

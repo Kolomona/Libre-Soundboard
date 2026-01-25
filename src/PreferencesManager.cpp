@@ -52,13 +52,28 @@ void PreferencesManager::setCacheTtlDays(int days) {
     m_settings.setValue("cache/ttlDays", days);
 }
 
-double PreferencesManager::defaultGain() const {
-    return m_settings.value("audio/defaultGain", 0.8).toDouble();
+QString PreferencesManager::jackClientName() const {
+    QString name = m_settings.value("audio/jackClientName", QStringLiteral("libre-soundboard")).toString();
+    if (name.trimmed().isEmpty()) {
+        name = QStringLiteral("libre-soundboard");
+    }
+    return name;
 }
 
-void PreferencesManager::setDefaultGain(double g) {
-    if (g < 0.0) g = 0.0; if (g > 1.0) g = 1.0;
-    m_settings.setValue("audio/defaultGain", g);
+void PreferencesManager::setJackClientName(const QString& name) {
+    QString n = name.trimmed();
+    if (n.isEmpty()) {
+        n = QStringLiteral("libre-soundboard");
+    }
+    m_settings.setValue("audio/jackClientName", n);
+}
+
+bool PreferencesManager::jackRememberConnections() const {
+    return m_settings.value("audio/jackRememberConnections", true).toBool();
+}
+
+void PreferencesManager::setJackRememberConnections(bool enabled) {
+    m_settings.setValue("audio/jackRememberConnections", enabled);
 }
 
 PreferencesManager::LogLevel PreferencesManager::logLevel() const {

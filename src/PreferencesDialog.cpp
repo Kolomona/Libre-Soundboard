@@ -109,10 +109,18 @@ void PreferencesDialog::connectSignals() {
     connect(m_btnCancel, &QPushButton::clicked, this, [this]() { reject(); });
     // Save applies page changes (no-op stubs for now) and closes
     connect(m_btnSave, &QPushButton::clicked, this, [this]() {
+        auto& pm = PreferencesManager::instance();
+        QString oldClientName = pm.jackClientName();
+        bool oldRememberConnections = pm.jackRememberConnections();
         // Iterate pages and call apply()
         for (int i = 0; i < m_stack->count(); ++i) {
             auto* page = qobject_cast<PreferencesPage*>(m_stack->widget(i));
             if (page) page->apply();
+        }
+        QString newClientName = pm.jackClientName();
+        bool newRememberConnections = pm.jackRememberConnections();
+        if (m_mainWindow && (newClientName != oldClientName || newRememberConnections != oldRememberConnections)) {
+            m_mainWindow->restartAudioEngineWithPreferences(oldClientName);
         }
         accept();
     });

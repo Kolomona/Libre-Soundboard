@@ -2,6 +2,7 @@
 #include <QObject>
 #include <QSettings>
 #include <QStringList>
+#include <QString>
 
 class PreferencesManager : public QObject {
     Q_OBJECT
@@ -17,8 +18,12 @@ public:
     void setCacheSoftLimitMB(int mb);
     int cacheTtlDays() const;               // default 90
     void setCacheTtlDays(int days);
-    double defaultGain() const;             // default 0.8
-    void setDefaultGain(double g);
+
+    // Phase 6: JACK connection settings
+    QString jackClientName() const;                // default "libre-soundboard"
+    void setJackClientName(const QString& name);
+    bool jackRememberConnections() const;          // default true
+    void setJackRememberConnections(bool enabled);
 
     enum LogLevel { Off = 0, Error = 1, Warning = 2, Info = 3, Debug = 4 };
     LogLevel logLevel() const;              // default Warning

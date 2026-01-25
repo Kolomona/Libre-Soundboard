@@ -139,12 +139,14 @@ PrefAudioEnginePage::PrefAudioEnginePage(QWidget* parent)
 {
 	auto* v = new QVBoxLayout(this);
 	auto* form = new QFormLayout();
-	m_gain = new QDoubleSpinBox(this);
-	m_gain->setObjectName("spinDefaultGain");
-	m_gain->setRange(0.0, 1.0);
-	m_gain->setSingleStep(0.1);
-	m_gain->setDecimals(2);
-	form->addRow(tr("Default Gain"), m_gain);
+
+	m_jackName = new QLineEdit(this);
+	m_jackName->setObjectName("editJackClientName");
+	form->addRow(tr("JACK Client Name"), m_jackName);
+
+	m_rememberConnections = new QCheckBox(tr("Remember Jack Connections"), this);
+	m_rememberConnections->setObjectName("chkJackRememberConnections");
+	form->addRow(QString(), m_rememberConnections);
 	v->addLayout(form);
 	v->addStretch();
 	setLayout(v);
@@ -153,12 +155,16 @@ PrefAudioEnginePage::PrefAudioEnginePage(QWidget* parent)
 
 void PrefAudioEnginePage::apply()
 {
-	PreferencesManager::instance().setDefaultGain(m_gain->value());
+	auto& pm = PreferencesManager::instance();
+	pm.setJackClientName(m_jackName->text());
+	pm.setJackRememberConnections(m_rememberConnections->isChecked());
 }
 
 void PrefAudioEnginePage::reset()
 {
-	m_gain->setValue(PreferencesManager::instance().defaultGain());
+	auto& pm = PreferencesManager::instance();
+	m_jackName->setText(pm.jackClientName());
+	m_rememberConnections->setChecked(pm.jackRememberConnections());
 }
 
 // Debug

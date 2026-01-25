@@ -135,17 +135,18 @@ LibreSoundboard has 10 key user-configurable preferences currently hardcoded or 
 ---
 
 ## Phase 6: JACK Connection Settings
-**Goals:** Implement custom JACK client name, auto-connect to outputs
+**Goals:** Implement custom JACK client name, remember JACK connections preference
 
 **Tasks:**
-- [ ] Implement AudioEngine preferences page with text field: Custom JACK Client Name (default "libre-soundboard")
-- [ ] Implement AudioEngine preferences page with checkbox: Auto-connect to system outputs
-- [ ] AudioEngine uses PreferencesManager values in init() to configure JACK client
-- [ ] PreferencesManager provides jackClientName(), jackAutoConnect()
-- [ ] Restart audio engine on preference change (stop, shutdown, re-init with new settings)
-- [ ] Build succeeds
+- [x] Implement AudioEngine preferences page with text field: Custom JACK Client Name (default "libre-soundboard")
+- [x] Implement AudioEngine preferences page with checkbox: Remember Jack Connections (default true)
+- [x] AudioEngine uses PreferencesManager values in init() to configure JACK client
+- [x] PreferencesManager provides jackClientName(), jackRememberConnections()
+- [x] saveConnections() and restoreConnections() are conditional on jackRememberConnections() preference
+- [x] Restart audio engine on preference change (stop, shutdown, re-init with new settings)
+- [x] Build succeeds
 
-**Notes:** JACK client name and auto-connect must be set before jack_client_open(). Changes require engine restart.
+**Notes:** Connection save/restore already existed and worked perfectly. Changed from auto-connect to remember connections toggle. Removed defaultGain preference entirely (now uses constant 0.8f).
 
 **For human Testing:**
 - Verify JACK is running (command: `jack_lsp`)

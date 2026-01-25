@@ -1,5 +1,6 @@
 #include "AudioEngine.h"
 #include "KeepAliveMonitor.h"
+#include "PreferencesManager.h"
 
 #include <jack/jack.h>
 #include <samplerate.h>
@@ -22,6 +23,8 @@ struct AudioEnginePrivate {
     unsigned int jack_sample_rate = 48000;
     AudioEnginePlay player;
     KeepAliveMonitor* keepAliveMonitor = nullptr;
+    std::string jackClientName = "libre-soundboard";
+    int initCount = 0;
     
     // For testing: inject input samples
     std::vector<float> testInputSamples;
@@ -68,7 +71,13 @@ AudioEngine::~AudioEngine()
 
 bool AudioEngine::init()
 {
-    const char* client_name = "libre_soundboard_client";
+    if (!m_priv) return false;
+
+    PreferencesManager& pm = PreferencesManager::instance();
+    m_priv->jackClientName = pm.jackClientName().toStdString();
+    m_priv->initCount += 1;
+
+    const char* client_name = m_priv->jackClientName.c_str();
     jack_status_t status;
     m_priv->client = jack_client_open(client_name, JackNullOption, &status);
     if (!m_priv->client) {
@@ -89,7 +98,9 @@ bool AudioEngine::init()
     }
 
     // Attempt to restore previous connections after activation
-    restoreConnections();
+    if (pm.jackRememberConnections()) {
+        restoreConnections();
+    }
 
     return true;
 }
@@ -98,9 +109,15 @@ void AudioEngine::shutdown()
 {
     if (m_priv && m_priv->client) {
         // Save current connections before closing
-        saveConnections();
+        PreferencesManager& pm = PreferencesManager::instance();
+        if (pm.jackRememberConnections()) {
+            saveConnections();
+        }
         jack_client_close(m_priv->client);
         m_priv->client = nullptr;
+        m_priv->out_ports[0] = nullptr;
+        m_priv->out_ports[1] = nullptr;
+        m_priv->in_port = nullptr;
     }
 }
 
@@ -335,4 +352,65 @@ void AudioEngine::injectInputSamplesForTesting(const std::vector<float>& samples
     if (!m_priv) return;
     std::lock_guard<std::mutex> lock(m_priv->testInputLock);
     m_priv->testInputSamples = samples;
+}
+
+std::string AudioEngine::clientName() const
+{
+    if (!m_priv) return std::string();
+    return m_priv->jackClientName;
+}
+
+bool AudioEngine::autoConnectOutputsEnabled() const
+{
+    if (!m_priv) return false;
+    PreferencesManager& pm = PreferencesManager::instance();
+    return pm.jackRememberConnections();
+}
+
+int AudioEngine::initCount() const
+{
+    if (!m_priv) return 0;
+    return m_priv->initCount;
+}
+
+void AudioEngine::updateConnectionsForClientRename(const std::string& oldClientName, const std::string& newClientName)
+{
+    if (oldClientName == newClientName || oldClientName.empty()) return;
+    
+    std::string path = configPath();
+    std::ifstream ifs(path);
+    if (!ifs) return;
+    
+    // Read all lines and update client name prefix
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.empty()) {
+            lines.push_back(line);
+            continue;
+        }
+        
+        // Replace oldClientName prefix with newClientName
+        // Port names have format: "client_name:port_name"
+        std::string oldPrefix = oldClientName + ":";
+        std::string newPrefix = newClientName + ":";
+        
+        size_t pos = 0;
+        while ((pos = line.find(oldPrefix, pos)) != std::string::npos) {
+            line.replace(pos, oldPrefix.length(), newPrefix);
+            pos += newPrefix.length();
+        }
+        
+        lines.push_back(line);
+    }
+    ifs.close();
+    
+    // Write updated lines back
+    std::ofstream ofs(path, std::ios::trunc);
+    if (!ofs) return;
+    
+    for (const auto& l : lines) {
+        ofs << l << "\n";
+    }
+    ofs.close();
 }

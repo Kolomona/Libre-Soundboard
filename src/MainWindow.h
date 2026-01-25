@@ -33,6 +33,7 @@ public slots:
     void saveLayout();
     void restoreLayout();
     void onKeepAliveTriggered();
+    void restartAudioEngineWithPreferences(const QString& oldClientName = QString());
 
     // KeepAliveMonitor integration accessors
     KeepAliveMonitor* getKeepAliveMonitor() const;

@@ -46,11 +46,6 @@ TEST_CASE("Phase 2 UI widgets exist and persist via Save", "[preferences][phase2
     REQUIRE(spinSize != nullptr);
     REQUIRE(spinTtl != nullptr);
 
-    // Navigate to Audio Engine page
-    tree->setCurrentItem(tree->topLevelItem(0));
-    auto spinGain = dlg.findChild<QDoubleSpinBox*>("spinDefaultGain");
-    REQUIRE(spinGain != nullptr);
-
     // Navigate to Debug page
     tree->setCurrentItem(tree->topLevelItem(6));
     auto comboLog = dlg.findChild<QComboBox*>("comboLogLevel");
@@ -60,8 +55,6 @@ TEST_CASE("Phase 2 UI widgets exist and persist via Save", "[preferences][phase2
     tree->setCurrentItem(tree->topLevelItem(2));
     spinSize->setValue(100);
     spinTtl->setValue(30);
-    tree->setCurrentItem(tree->topLevelItem(0));
-    spinGain->setValue(0.5);
     tree->setCurrentItem(tree->topLevelItem(6));
     comboLog->setCurrentIndex(3); // Info
 
@@ -73,7 +66,6 @@ TEST_CASE("Phase 2 UI widgets exist and persist via Save", "[preferences][phase2
     PreferencesManager& pm = PreferencesManager::instance();
     REQUIRE(pm.settings().value("cache/softLimitMB").toInt() == 100);
     REQUIRE(pm.settings().value("cache/ttlDays").toInt() == 30);
-    REQUIRE(pm.settings().value("audio/defaultGain").toDouble() == Approx(0.5));
     REQUIRE(pm.settings().value("debug/logLevel").toInt() == 3);
 
     // Reopen dialog and ensure widgets show persisted values
@@ -85,27 +77,21 @@ TEST_CASE("Phase 2 UI widgets exist and persist via Save", "[preferences][phase2
     auto spinTtl2 = dlg2.findChild<QSpinBox*>("spinCacheTTLDays");
     REQUIRE(spinSize2->value() == 100);
     REQUIRE(spinTtl2->value() == 30);
-    tree2->setCurrentItem(tree2->topLevelItem(0));
-    auto spinGain2 = dlg2.findChild<QDoubleSpinBox*>("spinDefaultGain");
-    REQUIRE(spinGain2->value() == Approx(0.5));
     tree2->setCurrentItem(tree2->topLevelItem(6));
     auto comboLog2 = dlg2.findChild<QComboBox*>("comboLogLevel");
     REQUIRE(comboLog2->currentIndex() == 3);
 }
 
-TEST_CASE("MainWindow uses default gain for new containers", "[preferences][phase2]") {
+TEST_CASE("MainWindow uses constant default gain for new containers", "[preferences][phase2]") {
     clearPrefs();
     int argc = 0; char* argv[] = {nullptr}; QApplication app(argc, argv);
-    // Set default gain to 0.4
-    PreferencesManager::instance().settings().setValue("audio/defaultGain", 0.4);
-    // Use test-mode paths so any restore/save uses isolated locations
     QStandardPaths::setTestModeEnabled(true);
 
     MainWindow mw;
     // Find a SoundContainer child and check initial volume
     auto containers = mw.findChildren<SoundContainer*>();
     REQUIRE(containers.size() > 0);
-    REQUIRE(containers.first()->volume() == Approx(0.4f).margin(0.02f));
+    REQUIRE(containers.first()->volume() == Approx(0.8f).margin(0.02f));
 }
 
 TEST_CASE("WaveformCache::evict honors preferences soft limit and TTL", "[preferences][phase2]") {

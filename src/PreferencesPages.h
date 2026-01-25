@@ -16,7 +16,8 @@ public:
     void apply() override;
     void reset() override;
 private:
-    QDoubleSpinBox* m_gain = nullptr;
+    QLineEdit* m_jackName = nullptr;
+    QCheckBox* m_rememberConnections = nullptr;
 };
 
 class PrefGridLayoutPage : public PreferencesPage {
