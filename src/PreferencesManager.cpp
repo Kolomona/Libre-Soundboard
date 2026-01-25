@@ -101,6 +101,14 @@ void PreferencesManager::setStartupBehavior(PreferencesManager::StartupBehavior 
     m_settings.setValue("startup/behavior", v);
 }
 
+QString PreferencesManager::lastSavedSessionPath() const {
+    return m_settings.value("sessions/lastSavedPath", QString()).toString();
+}
+
+void PreferencesManager::setLastSavedSessionPath(const QString& path) {
+    m_settings.setValue("sessions/lastSavedPath", path);
+}
+
 bool PreferencesManager::keepAliveEnabled() const {
     return m_settings.value("keepalive/enabled", true).toBool();
 }

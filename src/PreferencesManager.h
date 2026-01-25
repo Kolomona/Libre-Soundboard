@@ -34,6 +34,10 @@ public:
     StartupBehavior startupBehavior() const;        // default RestoreLastSession
     void setStartupBehavior(StartupBehavior b);
 
+    // Phase 9: Sessions
+    QString lastSavedSessionPath() const;           // path to last saved session file
+    void setLastSavedSessionPath(const QString& path);
+
     // Phase 3: Keep-Alive preferences
     enum class KeepAliveTarget { LastTabLastSound = 0, SpecificSlot = 1 };
     bool keepAliveEnabled() const;                 // default true

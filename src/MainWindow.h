@@ -35,6 +35,10 @@ public slots:
     void onKeepAliveTriggered();
     void restartAudioEngineWithPreferences(const QString& oldClientName = QString());
 
+    // Session I/O
+    void saveSessionAs(const QString& filePath);
+    void loadSession(const QString& filePath);
+
     // KeepAliveMonitor integration accessors
     KeepAliveMonitor* getKeepAliveMonitor() const;
     AudioEngine* getAudioEngine();
@@ -97,6 +101,11 @@ private:
     QAction* m_undoAction = nullptr;
     QAction* m_redoAction = nullptr;
 
+private slots:
+    void onSaveSession();
+    void onSaveSessionAs();
+    void onLoadRecentSession();
+
 private:
     AudioEngine m_audioEngine;
     CustomTabWidget* m_tabs = nullptr;
@@ -105,10 +114,14 @@ private:
     // containers[tabIndex][slotIndex]
     std::vector<std::vector<SoundContainer*>> m_containers;
     QString m_layoutPath;
+    QString m_currentSessionPath;
+    QMenu* m_recentMenu = nullptr;
     KeepAliveMonitor* m_keepAliveMonitor = nullptr;
     QLabel* m_keepAliveStatusLabel = nullptr;
     void applyKeepAlivePreferences();
     bool playAudioFile(const QString& path, SoundContainer* src, float volumeOverride, bool useOverrideVolume);
+    void updateRecentSessionsMenu();
+    void updateWindowTitle();
     
     void syncContainersWithUi();
     void writeDebugLog(const QString& msg);

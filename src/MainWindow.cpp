@@ -28,6 +28,8 @@
 #include <QDateTime>
 #include <QFile>
 #include <QCoreApplication>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <unistd.h>
 #include <QTimer>
 
@@ -41,6 +43,7 @@
 #include "CustomTabWidget.h"
 #include "PreferencesDialog.h"
 #include "PreferencesManager.h"
+#include "SessionManager.h"
 #include "ShortcutsManager.h"
 #include "DebugLog.h"
 
@@ -70,7 +73,19 @@ MainWindow::MainWindow(QWidget* parent)
     // Menu
     auto fileMenu = menuBar()->addMenu(tr("File"));
     fileMenu->addAction(tr("Open"));
-    fileMenu->addAction(tr("Save"));
+    
+    QAction* saveAction = fileMenu->addAction(tr("Save"));
+    saveAction->setShortcut(QKeySequence::Save);
+    connect(saveAction, &QAction::triggered, this, &MainWindow::onSaveSession);
+    
+    QAction* saveAsAction = fileMenu->addAction(tr("Save As..."));
+    saveAsAction->setShortcut(QKeySequence::SaveAs);
+    connect(saveAsAction, &QAction::triggered, this, &MainWindow::onSaveSessionAs);
+    
+    m_recentMenu = fileMenu->addMenu(tr("Recent Sessions"));
+    m_recentMenu->setObjectName("recentSessionsMenu");
+    updateRecentSessionsMenu();
+    
     fileMenu->addSeparator();
     // Quit action with confirmation dialog
     QAction* quitAction = fileMenu->addAction(tr("Quit"));
@@ -260,7 +275,12 @@ MainWindow::MainWindow(QWidget* parent)
     setCentralWidget(m_tabs);
     // After UI is constructed, restore previous layout if preference allows
     if (PreferencesManager::instance().startupBehavior() == PreferencesManager::StartupBehavior::RestoreLastSession) {
-        restoreLayout();
+        QString lastSession = PreferencesManager::instance().lastSavedSessionPath();
+        if (!lastSession.isEmpty() && QFile::exists(lastSession)) {
+            loadSession(lastSession);
+        } else {
+            restoreLayout();
+        }
     }
     
     // Initialize KeepAliveMonitor for input monitoring
@@ -269,7 +289,7 @@ MainWindow::MainWindow(QWidget* parent)
     
     // Emit a startup debug line so we can confirm the debug logger is being invoked
     writeDebugLog(QString("MainWindow constructed pid=%1").arg(getpid()));
-    setWindowTitle(tr("LibreSoundboard"));
+    updateWindowTitle();
     resize(900, 600);
     // Allow shrinking down to a usable minimum width while keeping layouts flexible.
     // This ensures users can resize the app down to ~500px when desired.
@@ -1430,4 +1450,159 @@ void MainWindow::onKeepAliveTriggered()
     float volume = pm.keepAliveUseSlotVolume() ? target->volume() : static_cast<float>(pm.keepAliveOverrideVolume());
     writeDebugLog(QString("onKeepAliveTriggered: Playing '%1' at volume %2").arg(target->file()).arg(volume));
     playAudioFile(target->file(), target, volume, !pm.keepAliveUseSlotVolume());
+}
+void MainWindow::saveSessionAs(const QString& filePath)
+{
+    // Build current session JSON
+    QJsonArray tabsArr;
+    for (auto &tabVec : m_containers) {
+        QJsonArray slotArr;
+        for (auto* sc : tabVec) {
+            QJsonObject obj;
+            obj["file"] = sc ? sc->file() : QString();
+            obj["volume"] = sc ? sc->volume() : 1.0;
+            if (sc && sc->backdropColor().isValid()) {
+                obj["backdrop"] = static_cast<double>(sc->backdropColor().rgba());
+            }
+            slotArr.append(obj);
+        }
+        tabsArr.append(slotArr);
+    }
+    
+    QJsonArray titlesArr;
+    for (int i = 0; i < m_tabs->count(); ++i) {
+        titlesArr.append(m_tabs->tabText(i));
+    }
+
+    QJsonObject root;
+    root["titles"] = titlesArr;
+    root["tabs"] = tabsArr;
+    QJsonDocument doc(root);
+    
+    // Save via SessionManager
+    if (SessionManager::instance().saveSession(filePath, doc)) {
+        m_currentSessionPath = filePath;
+        PreferencesManager::instance().setLastSavedSessionPath(filePath);
+        PreferencesManager::instance().settings().sync();
+        updateRecentSessionsMenu();
+        updateWindowTitle();
+        statusBar()->showMessage(tr("Session saved: %1").arg(QFileInfo(filePath).fileName()), 3000);
+    } else {
+        QMessageBox::warning(this, tr("Save Failed"), tr("Unable to save session to %1").arg(filePath));
+    }
+}
+
+void MainWindow::loadSession(const QString& filePath)
+{
+    QJsonDocument doc = SessionManager::instance().loadSession(filePath);
+    if (!doc.isObject()) {
+        QMessageBox::warning(this, tr("Load Failed"), tr("Unable to load session from %1").arg(filePath));
+        return;
+    }
+    
+    QJsonObject root = doc.object();
+    QJsonArray tabsArr = root.value("tabs").toArray();
+    QJsonArray titlesArr = root.value("titles").toArray();
+    
+    // Restore tab titles if present
+    for (int i = 0; i < (int)titlesArr.size() && i < m_tabs->count(); ++i) {
+        if (titlesArr[i].isString()) {
+            m_tabs->setTabText(i, titlesArr[i].toString());
+        }
+    }
+
+    // Restore slots and volumes
+    int t = 0;
+    for (auto tabVal : tabsArr) {
+        if (t >= (int)m_containers.size()) break;
+        if (!tabVal.isArray()) { ++t; continue; }
+        QJsonArray slotArr = tabVal.toArray();
+        int s = 0;
+        for (auto slotVal : slotArr) {
+            if (s >= (int)m_containers[t].size()) break;
+            if (!slotVal.isObject()) { ++s; continue; }
+            QJsonObject obj = slotVal.toObject();
+            QString path = obj.value("file").toString();
+            double vol = obj.value("volume").toDouble(1.0);
+            SoundContainer* sc = m_containers[t][s];
+            
+            if (sc && obj.contains("backdrop")) {
+                quint32 rgba = static_cast<quint32>(static_cast<uint64_t>(obj.value("backdrop").toDouble()));
+                QColor c = QColor::fromRgba(rgba);
+                sc->setBackdropColor(c);
+            }
+            if (sc) {
+                if (!path.isEmpty()) sc->setFile(path);
+                sc->setVolume(static_cast<float>(vol));
+            }
+            ++s;
+        }
+        ++t;
+    }
+    
+    PreferencesManager::instance().setLastSavedSessionPath(filePath);
+    PreferencesManager::instance().settings().sync();
+    statusBar()->showMessage(tr("Session loaded: %1").arg(QFileInfo(filePath).fileName()), 3000);
+    m_currentSessionPath = filePath;
+    updateWindowTitle();
+}
+
+void MainWindow::onSaveSession()
+{
+    if (m_currentSessionPath.isEmpty()) {
+        onSaveSessionAs();
+    } else {
+        saveSessionAs(m_currentSessionPath);
+    }
+}
+
+void MainWindow::onSaveSessionAs()
+{
+    QString fileName = QFileDialog::getSaveFileName(this,
+        tr("Save Session As..."), QString(), tr("Session Files (*.json);;All Files (*)"));
+    if (!fileName.isEmpty()) {
+        saveSessionAs(fileName);
+        m_currentSessionPath = fileName;
+        updateWindowTitle();
+    }
+}
+
+void MainWindow::onLoadRecentSession()
+{
+    QAction* action = qobject_cast<QAction*>(sender());
+    if (action) {
+        loadSession(action->data().toString());
+        m_currentSessionPath = action->data().toString();
+        updateWindowTitle();
+    }
+}
+
+void MainWindow::updateRecentSessionsMenu()
+{
+    if (!m_recentMenu) return;
+    
+    m_recentMenu->clear();
+    const auto& recent = SessionManager::instance().recentSessions();
+    if (recent.empty()) {
+        QAction* emptyAction = m_recentMenu->addAction(tr("No recent sessions"));
+        emptyAction->setEnabled(false);
+        return;
+    }
+    
+    for (const auto& path : recent) {
+        QAction* action = m_recentMenu->addAction(QFileInfo(path).fileName());
+        action->setData(path);
+        connect(action, &QAction::triggered, this, &MainWindow::onLoadRecentSession);
+    }
+}
+
+void MainWindow::updateWindowTitle()
+{
+    QString title;
+    if (m_currentSessionPath.isEmpty()) {
+        title = tr("Untitled - LibreSoundboard");
+    } else {
+        title = QFileInfo(m_currentSessionPath).baseName() + tr(" - LibreSoundboard");
+    }
+    setWindowTitle(title);
 }

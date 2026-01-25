@@ -39,6 +39,8 @@ add_library(libresoundboard_core STATIC
     PreferencesPage.h
     PreferencesPages.cpp
     PreferencesPages.h
+    SessionManager.cpp
+    SessionManager.h
     ShortcutsManager.cpp
     ShortcutsManager.h
 )
