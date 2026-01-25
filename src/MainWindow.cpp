@@ -258,8 +258,10 @@ MainWindow::MainWindow(QWidget* parent)
     }
 
     setCentralWidget(m_tabs);
-    // After UI is constructed, restore previous layout if any
-    restoreLayout();
+    // After UI is constructed, restore previous layout if preference allows
+    if (PreferencesManager::instance().startupBehavior() == PreferencesManager::StartupBehavior::RestoreLastSession) {
+        restoreLayout();
+    }
     
     // Initialize KeepAliveMonitor for input monitoring
     initializeKeepAliveMonitor();

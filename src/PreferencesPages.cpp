@@ -16,6 +16,8 @@
 #include <QTableWidget>
 #include <QKeySequenceEdit>
 #include <QHeaderView>
+#include <QRadioButton>
+#include <QButtonGroup>
 #include "DebugLog.h"
 
 // Implement the existing page classes with UI and apply/reset logic
@@ -467,4 +469,42 @@ void PrefKeyboardShortcutsPage::reset()
 			editor->setKeySequence(seq);
 		}
 	}
+}
+
+// Phase 8: Startup Page
+PrefStartupPage::PrefStartupPage(QWidget* parent)
+	: PreferencesPage(parent)
+{
+	auto* v = new QVBoxLayout(this);
+	m_group = new QButtonGroup(this);
+
+	m_restoreLast = new QRadioButton(tr("Restore last session"), this);
+	m_restoreLast->setObjectName("radioStartupRestore");
+	m_startEmpty = new QRadioButton(tr("Start with empty boards"), this);
+	m_startEmpty->setObjectName("radioStartupEmpty");
+
+	m_group->addButton(m_restoreLast);
+	m_group->addButton(m_startEmpty);
+
+	v->addWidget(m_restoreLast);
+	v->addWidget(m_startEmpty);
+	v->addStretch();
+	setLayout(v);
+
+	reset();
+}
+
+void PrefStartupPage::apply()
+{
+	auto choice = m_restoreLast->isChecked()
+	    ? PreferencesManager::StartupBehavior::RestoreLastSession
+	    : PreferencesManager::StartupBehavior::StartEmpty;
+	PreferencesManager::instance().setStartupBehavior(choice);
+}
+
+void PrefStartupPage::reset()
+{
+	auto behavior = PreferencesManager::instance().startupBehavior();
+	m_restoreLast->setChecked(behavior == PreferencesManager::StartupBehavior::RestoreLastSession);
+	m_startEmpty->setChecked(behavior == PreferencesManager::StartupBehavior::StartEmpty);
 }

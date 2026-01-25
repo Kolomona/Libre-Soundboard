@@ -87,6 +87,20 @@ void PreferencesManager::setLogLevel(PreferencesManager::LogLevel lvl) {
     m_settings.setValue("debug/logLevel", static_cast<int>(lvl));
 }
 
+PreferencesManager::StartupBehavior PreferencesManager::startupBehavior() const {
+    int v = m_settings.value("startup/behavior", 0).toInt();
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    return static_cast<StartupBehavior>(v);
+}
+
+void PreferencesManager::setStartupBehavior(PreferencesManager::StartupBehavior b) {
+    int v = static_cast<int>(b);
+    if (v < 0) v = 0;
+    if (v > 1) v = 1;
+    m_settings.setValue("startup/behavior", v);
+}
+
 bool PreferencesManager::keepAliveEnabled() const {
     return m_settings.value("keepalive/enabled", true).toBool();
 }

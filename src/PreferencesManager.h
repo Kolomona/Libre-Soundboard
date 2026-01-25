@@ -29,6 +29,11 @@ public:
     LogLevel logLevel() const;              // default Warning
     void setLogLevel(LogLevel lvl);
 
+    // Phase 8: Startup behavior
+    enum class StartupBehavior { RestoreLastSession = 0, StartEmpty = 1 };
+    StartupBehavior startupBehavior() const;        // default RestoreLastSession
+    void setStartupBehavior(StartupBehavior b);
+
     // Phase 3: Keep-Alive preferences
     enum class KeepAliveTarget { LastTabLastSound = 0, SpecificSlot = 1 };
     bool keepAliveEnabled() const;                 // default true

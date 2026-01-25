@@ -58,6 +58,8 @@ private:
 };
 
 class QTableWidget;
+class QRadioButton;
+class QButtonGroup;
 
 class PrefKeyboardShortcutsPage : public PreferencesPage {
     Q_OBJECT
@@ -72,7 +74,13 @@ private:
 class PrefStartupPage : public PreferencesPage {
     Q_OBJECT
 public:
-    explicit PrefStartupPage(QWidget* parent = nullptr) : PreferencesPage(parent) {}
+    explicit PrefStartupPage(QWidget* parent = nullptr);
+    void apply() override;
+    void reset() override;
+private:
+    QRadioButton* m_restoreLast = nullptr;
+    QRadioButton* m_startEmpty = nullptr;
+    QButtonGroup* m_group = nullptr;
 };
 
 class PrefDebugPage : public PreferencesPage {

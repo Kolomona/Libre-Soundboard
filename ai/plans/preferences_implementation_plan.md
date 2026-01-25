@@ -200,11 +200,11 @@ LibreSoundboard has 10 key user-configurable preferences currently hardcoded or 
 **Goals:** Allow restore-last-session or start-empty on app launch
 
 **Tasks:**
-- [ ] Implement Startup preferences page with radio buttons: "Restore last session" (default) or "Start with empty boards"
-- [ ] MainWindow::onStartup() checks PreferencesManager::startupBehavior()
-- [ ] If restore: load existing layout (current behavior)
-- [ ] If start-empty: skip layout load, show empty grid
-- [ ] Build succeeds
+- [x] Implement Startup preferences page with radio buttons: "Restore last session" (default) or "Start with empty boards"
+- [x] MainWindow::onStartup() checks PreferencesManager::startupBehavior()
+- [x] If restore: load existing layout (current behavior)
+- [x] If start-empty: skip layout load, show empty grid
+- [x] Build succeeds
 
 **Notes:** Startup behavior is read on MainWindow construction. No need to restart app to test.
 
